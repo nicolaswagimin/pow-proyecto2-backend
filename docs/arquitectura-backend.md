@@ -73,4 +73,4 @@ Navegador ── POST /api/paginas/descargar ──► validarUrl → DNS (todas
 
 ## Pruebas
 
-`npm test` (74 pruebas). Gemini, el DNS, la red y la base se reemplazan por dobles: no gastan cuota ni tocan Neon. Las rutas se prueban levantando una app Express en un puerto libre.
+`npm test` (89 pruebas). Gemini, el DNS, la red y la base se reemplazan por dobles: no gastan cuota ni tocan Neon. Las rutas se prueban levantando una app Express en un puerto libre.
