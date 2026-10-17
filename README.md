@@ -36,7 +36,7 @@ Si `db` o `ia` salen en `false`, revisa `DATABASE_URL` / `DB_SSL` o `GEMINI_API_
 ## Pruebas
 
 ```bash
-npm test                 # 74 pruebas con node:test
+npm test                 # 89 pruebas con node:test
 ```
 
 Gemini, el DNS, la red y la base se reemplazan por dobles: las pruebas no gastan cuota ni tocan Neon.
