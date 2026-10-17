@@ -2,7 +2,24 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
-## [Sin publicar] · 2026-10-17
+## [Sin publicar] · Corrección por fragmentos
+
+### Agregado
+- `POST /api/ia/fragmentos`: corrige hasta 10 fragmentos por petición (4000 caracteres cada uno, 20 000 en total) con el contexto mínimo: padre, detalle de axe, idioma y título. El documento nunca viaja a la IA.
+- Caché por fragmento en `ia_cache`: se piden a Gemini solo los fragmentos que faltan, y el mismo fragmento con el mismo contexto no vuelve a llamar.
+- Respuesta parcial: cada item se valida por separado, el reintento pide solo lo que faltó y lo que siga faltando vuelve en `sinRespuesta`.
+- Pruebas con una página grande generada (más de 300 000 caracteres). En total, 97 pruebas.
+
+### Eliminado
+- `POST /api/ia/corregir` (documento completo) y su límite de 100 000 caracteres.
+
+### Documentación
+- `ia.md`, `api.md`, `seguridad.md` (nueva tabla de límites de tamaño), `base-de-datos.md`, `arquitectura-backend.md` y [ADR 0005](docs/decisiones/0005-ia-por-fragmentos.md).
+
+### Variables de entorno
+- Ninguna nueva.
+
+## 2026-10-17 · Funcionalidad completa
 
 ### Agregado
 - `POST /api/paginas/descargar`: descarga una página por URL con protección contra SSRF (solo http/https en los puertos 80 y 443, DNS validado con todas sus IPs, conexión a la IP validada, hasta 3 redirecciones revisadas, 8 s, 2 MB y solo HTML). Límite de 30 descargas cada 15 min por usuario.
