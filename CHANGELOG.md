@@ -10,8 +10,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - Caché de la IA en la tabla `ia_cache`: la misma entrada nunca vuelve a llamar a Gemini.
 - Historial: `GET`, `POST`, `GET /:id` y `DELETE /:id` en `/api/auditorias`, con validación Zod.
 - Errores de la IA con su código: `429` (cuota agotada, con mensaje claro), `502` (respuesta inválida) y `503` (sin API key o Gemini caído).
-- 74 pruebas con `node:test` (`npm test`): SSRF, descarga, caché, esquema, corrección y rutas. Gemini, DNS y red simulados.
+- 89 pruebas con `node:test` (`npm test`): SSRF, descarga, caché, esquema, corrección y rutas. Gemini, DNS y red simulados.
 - Dependencias: `zod` y `undici`.
+- La entrada de la corrección se valida con Zod (hasta 30 elementos en total) y una corrección vacía o idéntica al original se rechaza.
+- En IPv6 solo se aceptan unicast globales; se rechazan las formas que encapsulan una IPv4.
 
 ### Cambiado
 - Modelo por defecto: `gemini-3.5-flash-lite`.
