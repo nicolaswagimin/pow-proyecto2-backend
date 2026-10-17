@@ -33,13 +33,13 @@ El mensaje del usuario lleva cada problema (regla, ayuda, selector y fragmento) 
 }
 ```
 
-`esquemaCorreccion`: como mucho 30 problemas; `explicacion` 1–600 caracteres; `original` 1–4000; `corregido` hasta 4000; `documento` 1–200 000. Además, `validarCorreccion` exige que cada `regla` + `selector` sea uno de los pedidos. Si la respuesta no pasa, se reintenta **una vez** agregando al prompt la lista de errores; si vuelve a fallar, `502` "La IA devolvió una corrección inválida dos veces…".
+`esquemaCorreccion`: como mucho 30 entradas (una por elemento pedido); `explicacion` 1–600 caracteres; `original` 1–4000; `corregido` 1–4000 y **distinto del original** (una corrección vacía o sin cambios se rechaza); `documento` 1–200 000. Además, `validarCorreccion` exige que cada `regla` + `selector` sea uno de los pedidos. Si la respuesta no pasa, se reintenta **una vez** agregando al prompt la lista de errores; si vuelve a fallar, `502` "La IA devolvió una corrección inválida dos veces…".
 
 ## Cuota: caché y límites
 
 - **Caché** (`ia_cache`): la clave es el SHA-256 de `{ html, problemas }` (JSON con las claves ordenadas) más `VERSION_PROMPT`. La misma entrada devuelve la respuesta guardada (`desdeCache: true`) sin llamar a Gemini, aunque la pida otra persona. Cambiar el prompt exige subir `VERSION_PROMPT`.
 - El frontend tampoco repite la petición si nada cambió.
-- Entrada: hasta 100 000 caracteres de HTML y 30 problemas (los más graves primero).
+- Entrada (`esquemaEntrada`, Zod): hasta 100 000 caracteres de HTML, 30 problemas y **30 elementos en total** (los más graves primero; el frontend recorta antes de enviar). Así la respuesta, que trae una entrada por elemento, siempre cabe en el esquema. Una entrada mal formada responde `400` sin llamar a Gemini.
 - Límite propio: 20 correcciones cada 15 minutos por usuario.
 
 ## Pruebas
