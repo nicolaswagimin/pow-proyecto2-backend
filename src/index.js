@@ -7,7 +7,7 @@ import { requireAuth } from './middleware/auth.js';
 import { limiteDescargas, limiteIA } from './middleware/limites.js';
 import authRouter from './routes/auth.js';
 import itemsRouter from './routes/items.js';
-import iaRouter from './routes/ia.js';
+import { rutasIA } from './routes/ia.js';
 import { rutasPaginas } from './routes/paginas.js';
 import { rutasAuditorias } from './routes/auditorias.js';
 
@@ -53,7 +53,7 @@ app.use('/api/auth', authRouter);
 
 // ---------- Rutas protegidas ----------
 app.use('/api/items', requireAuth, itemsRouter);
-app.use('/api/ia', requireAuth, limiteIA, iaRouter);
+app.use('/api/ia', requireAuth, limiteIA, rutasIA());
 app.use('/api/paginas', requireAuth, limiteDescargas, rutasPaginas());
 app.use('/api/auditorias', requireAuth, rutasAuditorias());
 
