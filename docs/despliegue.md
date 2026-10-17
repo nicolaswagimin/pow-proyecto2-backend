@@ -30,12 +30,18 @@ Crea una en <https://aistudio.google.com/apikey>. Puede ser la misma para los tr
 | `JWT_SECRET` | Un secreto nuevo (no el de local), generado con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"` |
 | `FRONTEND_URL` | La URL de Vercel sin `/` final; puedes sumar las locales: `https://pow-proyecto2.vercel.app,http://localhost:4200,http://localhost:4202` |
 | `JWT_EXPIRES_IN` | Opcional (`7d` por defecto) |
-| `GEMINI_MODEL` | Opcional (`gemini-2.5-flash` por defecto) |
+| `GEMINI_MODEL` | Opcional (`gemini-3.5-flash-lite` por defecto; `gemini-2.5-flash` respondió "high demand" en el proyecto 1) |
 
 No definas `PORT`: Render lo asigna.
 
+La auditoría, la IA y el historial **no necesitan variables nuevas**. La auditoría corre en el navegador, así que no hace falta instalar Chromium en Render.
+
 4. Despliega y abre `https://pow-proyecto2-backend.onrender.com/api/health`. Debe responder `{"ok":true,"db":true,"ia":true}`.
 5. Esa URL más `/api` es la que usa `src/environments/environment.ts` del frontend.
+
+### Redespliegue automático
+
+Cada `git push` a `main` vuelve a desplegar. Si alguna vez hace falta una variable nueva, agrégala primero en **Environment**.
 
 ## 4. Conectar CORS
 
@@ -49,6 +55,7 @@ Cuando Vercel te dé la URL del frontend, ponla en `FRONTEND_URL` y guarda. Rend
 | `/api/health` responde `"db": false` | `DATABASE_URL` mal copiada, o `DB_SSL=false` con Neon |
 | `/api/health` responde `"ia": false` | Falta `GEMINI_API_KEY` |
 | El frontend dice "No hay conexión con el backend" pero `/api/health` funciona en el navegador | El origen de Vercel no está en `FRONTEND_URL` (CORS) |
+| "No pudimos descargar la página" con una URL pública | La página tardó más de 8 s, pesa más de 2 MB o no es HTML (el mensaje lo dice) |
 | La primera petición tarda unos 50 s | El plan gratuito de Render duerme el servicio tras un rato sin uso; el frontend avisa "El servidor está despertando" |
 
 ## En local
