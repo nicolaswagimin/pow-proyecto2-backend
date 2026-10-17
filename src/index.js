@@ -6,7 +6,6 @@ import { iaDisponible } from './ia.js';
 import { requireAuth } from './middleware/auth.js';
 import { limiteDescargas, limiteIA } from './middleware/limites.js';
 import authRouter from './routes/auth.js';
-import itemsRouter from './routes/items.js';
 import { rutasIA } from './routes/ia.js';
 import { rutasPaginas } from './routes/paginas.js';
 import { rutasAuditorias } from './routes/auditorias.js';
@@ -52,7 +51,6 @@ app.get('/api/health', async (req, res) => {
 app.use('/api/auth', authRouter);
 
 // ---------- Rutas protegidas ----------
-app.use('/api/items', requireAuth, itemsRouter);
 app.use('/api/ia', requireAuth, limiteIA, rutasIA());
 app.use('/api/paginas', requireAuth, limiteDescargas, rutasPaginas());
 app.use('/api/auditorias', requireAuth, rutasAuditorias());
@@ -80,5 +78,5 @@ app.listen(PORT, () => {
 
 // Si la BD falla, el servidor sigue levantado y solo se muestra el error.
 iniciarDB()
-  .then(() => console.log('Base de datos lista (tablas usuarios e items verificadas).'))
+  .then(() => console.log('Base de datos lista (tablas usuarios, auditorias e ia_cache verificadas).'))
   .catch((err) => console.error('No se pudo iniciar la base de datos:', err.message));
