@@ -11,7 +11,7 @@ Frontend: <https://github.com/nicolaswagimin/pow-proyecto2-frontend>
 El análisis con axe-core **no corre aquí**: corre en el navegador, dentro de un iframe aislado (ver [docs/decisiones/0001](docs/decisiones/0001-axe-en-iframe-aislado-del-navegador.md)). El backend:
 
 - **Descarga páginas por URL** sin exponer la red interna (protección contra SSRF).
-- **Corrige con IA**: explicación y corrección de cada problema, más el documento completo corregido. Valida la respuesta con Zod y la guarda en caché para no gastar cuota con la misma entrada.
+- **Corrige con IA por fragmentos**: a Gemini solo van los elementos con problemas (con su contexto mínimo), nunca el documento, así que sirve para páginas de cualquier tamaño. Valida cada corrección con Zod y la guarda en caché por fragmento para no gastar cuota.
 - **Guarda el historial** de auditorías de cada persona.
 - Autenticación con correo y contraseña (bcrypt + JWT).
 
@@ -36,7 +36,7 @@ Si `db` o `ia` salen en `false`, revisa `DATABASE_URL` / `DB_SSL` o `GEMINI_API_
 ## Pruebas
 
 ```bash
-npm test                 # 89 pruebas con node:test
+npm test                 # 97 pruebas con node:test
 ```
 
 Gemini, el DNS, la red y la base se reemplazan por dobles: las pruebas no gastan cuota ni tocan Neon.
@@ -50,7 +50,7 @@ Gemini, el DNS, la red y la base se reemplazan por dobles: las pruebas no gastan
 | `POST` | `/api/auth/login` | Pública, 10 intentos / 15 min por IP | Devuelve `{ token, usuario }` |
 | `GET` | `/api/auth/yo` | Token | Datos del usuario |
 | `POST` | `/api/paginas/descargar` | Token, 30 / 15 min por usuario | Descarga el HTML de una URL pública: `{ html, urlFinal }` |
-| `POST` | `/api/ia/corregir` | Token, 20 / 15 min por usuario | Explicación y corrección de cada problema, y el documento corregido |
+| `POST` | `/api/ia/fragmentos` | Token, 20 / 15 min por usuario | Explicación y corrección de hasta 10 fragmentos |
 | `GET` | `/api/auditorias` | Token | Historial del usuario (sin el HTML) |
 | `POST` | `/api/auditorias` | Token | Guarda una auditoría |
 | `GET` | `/api/auditorias/:id` | Token | Una auditoría propia, completa |
