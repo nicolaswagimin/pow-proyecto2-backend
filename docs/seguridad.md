@@ -50,6 +50,8 @@ La IA ya no tiene un límite por tamaño de página (antes, 100 000 caracteres):
 - Las columnas sensibles (`password_hash`, `google_id`) nunca se devuelven: se usa `COLUMNAS_PUBLICAS`.
 - Las auditorías se filtran siempre por `usuario_id`; una ajena responde `404`, igual que una inexistente, para no revelar que existe.
 - Lo que devuelve Gemini es dato no confiable: se valida con Zod antes de usarlo, y las entradas de las rutas (auditorías) también.
+- **Correcciones con código ejecutable.** El HTML de la página puede traer instrucciones para la IA (inyección de prompt). Por eso se rechaza cualquier corrección que agregue scripts, marcos, `on*`, `srcdoc`, `javascript:` o meta refresh que el fragmento no tuviera. Se comprueba en el servidor antes de guardarla en la caché, y otra vez en el navegador antes de verificarla.
+- **Caché compartida sin envenenamiento.** La clave de cada fragmento incluye el lote entero en que se pidió. Un lote armado a propósito no puede dejar una corrección falsa para el mismo fragmento en la página de otra persona.
 - La API key de Gemini solo vive en el backend y viaja en la cabecera `x-goog-api-key`, no en la URL.
 
 ## SSRF
