@@ -48,6 +48,21 @@ const itemRespuesta = z.object({
   corregido: z.string().trim().min(1).max(8000),
 });
 
+// Lo que el frontend quitaría al sanear: scripts, marcos, objetos, <base>, meta refresh, on*,
+// srcdoc y javascript:. Una corrección no puede agregarlos (llega a la caché compartida y al HTML
+// que la persona descarga). Contar de más solo rechaza correcciones, nunca deja pasar una.
+const CODIGO_EJECUTABLE = [
+  /<\s*(script|noscript|iframe|frame|frameset|object|embed|applet|base)\b/gi,
+  /<\s*meta\b[^>]*http-equiv/gi,
+  /\son[a-z]+\s*=/gi,
+  /\ssrcdoc\s*=/gi,
+  /javascript\s*:/gi,
+];
+
+function agregaCodigo(original, corregido) {
+  return CODIGO_EJECUTABLE.some((patron) => (corregido.match(patron)?.length ?? 0) > (original.match(patron)?.length ?? 0));
+}
+
 // Valida cada item por separado: los válidos se usan aunque otros fallen (los que fallan se
 // vuelven a pedir). Un item es válido si corresponde a un fragmento pedido y lo cambia.
 export function validarRespuestaFragmentos(valor, pedidos) {
@@ -66,6 +81,8 @@ export function validarRespuestaFragmentos(valor, pedidos) {
       errores.push(`El fragmento "${id}" no se pidió.`);
     } else if (r.data.corregido === porId.get(id).html.trim()) {
       errores.push(`La corrección del fragmento "${id}" debe cambiar el fragmento.`);
+    } else if (agregaCodigo(porId.get(id).html, r.data.corregido)) {
+      errores.push(`La corrección del fragmento "${id}" agrega código ejecutable (scripts, eventos o marcos): corrígelo sin eso.`);
     } else if (!validos.has(id)) {
       validos.set(id, r.data);
     }

@@ -81,6 +81,21 @@ test('un id repetido en la respuesta cuenta una sola vez', () => {
   assert.equal(r.validos[0].corregido, '<img src="f1.png" alt="Logo">');
 });
 
+test('una corrección que agrega scripts, on*, javascript: o marcos no es válida', () => {
+  const r = validarRespuestaFragmentos(
+    { fragmentos: [item('f1', { corregido: '<img src="f1.png" alt="x" onload="x()">' }), item('f2')] },
+    pedidos,
+  );
+  assert.deepEqual(r.validos.map((v) => v.id), ['f2']);
+  assert.ok(r.errores.some((e) => /f1.*ejecut/.test(e)), r.errores.join('\n'));
+});
+
+test('lo que ya traía el fragmento original no cuenta como agregado', () => {
+  const conOn = [fragmento('f1', { html: '<button onclick="comprar()"></button>' })];
+  const r = validarRespuestaFragmentos({ fragmentos: [item('f1', { corregido: '<button onclick="comprar()">Comprar</button>' })] }, conOn);
+  assert.equal(r.validos.length, 1, r.errores.join('\n'));
+});
+
 test('algo que no tiene la forma esperada no tiene válidos', () => {
   for (const malo of ['hola', null, [], { fragmentos: 'x' }]) {
     const r = validarRespuestaFragmentos(malo, pedidos);
