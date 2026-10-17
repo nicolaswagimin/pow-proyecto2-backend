@@ -25,7 +25,8 @@ async function levantar({ corregir, repo }) {
       headers: { 'content-type': 'application/json' },
       body: cuerpo ? JSON.stringify(cuerpo) : undefined,
     });
-    return { estado: r.status, datos: r.status === 204 ? null : await r.json() };
+    const texto = await r.text();
+    return { estado: r.status, datos: texto && r.headers.get('content-type')?.includes('json') ? JSON.parse(texto) : null };
   };
   return { pedir, cerrar: () => servidor.close() };
 }
@@ -59,15 +60,23 @@ function repoFalso() {
   };
 }
 
-test('POST /api/ia/corregir devuelve la corrección', async (t) => {
-  const s = await levantar({ corregir: async () => ({ problemas: [], documento: 'x', desdeCache: false }), repo: repoFalso() });
+test('POST /api/ia/fragmentos devuelve las correcciones', async (t) => {
+  let recibido;
+  const corregir = async (entrada) => {
+    recibido = entrada;
+    return { fragmentos: [{ id: 'f1', explicacion: 'e', corregido: '<img alt="x">', desdeCache: false }], sinRespuesta: [] };
+  };
+  const s = await levantar({ corregir, repo: repoFalso() });
   t.after(s.cerrar);
-  const r = await s.pedir('POST', '/ia/corregir', { html: '<p>', problemas: [{}] });
+  const cuerpo = { pagina: { idioma: 'es', titulo: 'T' }, fragmentos: [{ id: 'f1', regla: 'image-alt', html: '<img>' }] };
+  const r = await s.pedir('POST', '/ia/fragmentos', cuerpo);
   assert.equal(r.estado, 200);
-  assert.equal(r.datos.documento, 'x');
+  assert.deepEqual(recibido, cuerpo);
+  assert.equal(r.datos.fragmentos[0].corregido, '<img alt="x">');
+  assert.deepEqual(r.datos.sinRespuesta, []);
 });
 
-test('POST /api/ia/corregir traduce los errores de la IA a su código', async (t) => {
+test('POST /api/ia/fragmentos traduce los errores de la IA a su código', async (t) => {
   const s = await levantar({
     corregir: async () => {
       throw new ErrorIA('La IA está saturada en este momento.', 429);
@@ -75,9 +84,15 @@ test('POST /api/ia/corregir traduce los errores de la IA a su código', async (t
     repo: repoFalso(),
   });
   t.after(s.cerrar);
-  const r = await s.pedir('POST', '/ia/corregir', { html: '<p>', problemas: [{}] });
+  const r = await s.pedir('POST', '/ia/fragmentos', { fragmentos: [] });
   assert.equal(r.estado, 429);
   assert.match(r.datos.error, /saturada/);
+});
+
+test('la corrección del documento completo ya no existe', async (t) => {
+  const s = await levantar({ corregir: async () => ({}), repo: repoFalso() });
+  t.after(s.cerrar);
+  assert.equal((await s.pedir('POST', '/ia/corregir', { html: '<p>', problemas: [] })).estado, 404);
 });
 
 test('guardar, listar, obtener y eliminar auditorías', async (t) => {
