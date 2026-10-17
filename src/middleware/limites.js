@@ -9,14 +9,14 @@ export const limiteLogin = rateLimit({
   message: { error: 'Demasiados intentos de inicio de sesión. Espera unos minutos y vuelve a intentarlo.' },
 });
 
-// 30 preguntas a la IA cada 15 minutos por usuario (se aplica después de requireAuth).
+// 20 correcciones con la IA cada 15 minutos por usuario (se aplica después de requireAuth).
 export const limiteIA = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 30,
+  limit: 20,
   standardHeaders: 'draft-8',
   legacyHeaders: false,
   keyGenerator: (req) => `usuario-${req.usuario.id}`,
-  message: { error: 'Hiciste muchas preguntas seguidas. Espera unos minutos y vuelve a intentarlo.' },
+  message: { error: 'Pediste muchas correcciones seguidas. Espera unos minutos y vuelve a intentarlo.' },
 });
 
 // 30 descargas de páginas cada 15 minutos por usuario (se aplica después de requireAuth).
