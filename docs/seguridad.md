@@ -28,10 +28,21 @@
 | Ruta | Límite | Clave |
 |---|---|---|
 | `POST /api/auth/login` | 10 cada 15 min | IP (`trust proxy` en 1 para leer la IP real detrás del proxy de Render) |
-| `POST /api/ia/corregir` | 20 cada 15 min | id del usuario |
+| `POST /api/ia/fragmentos` | 20 lotes cada 15 min | id del usuario |
 | `POST /api/paginas/descargar` | 30 cada 15 min | id del usuario |
 
 Al pasarlo responden `429` con un mensaje en español y las cabeceras estándar `RateLimit` (borrador 8). El contador vive en memoria: se reinicia al reiniciar el servidor y no se comparte entre instancias.
+
+## Límites de tamaño
+
+| Qué | Límite | Dónde |
+|---|---|---|
+| Cuerpo JSON | 3 MB | `express.json` |
+| Página descargada por URL | 2 MB, 8 s, solo HTML | `descargar.js` |
+| HTML de una auditoría guardada | 2 MB (y otro tanto el corregido) | `routes/auditorias.js` |
+| Corrección con IA | 10 fragmentos por petición, 4000 caracteres por fragmento, 20 000 en total | `ia/esquema.js` |
+
+La IA ya no tiene un límite por tamaño de página (antes, 100 000 caracteres): solo recibe fragmentos, nunca el documento.
 
 ## Datos y consultas
 
