@@ -153,7 +153,7 @@ Response `200`:
 
 | Código | Mensaje |
 |---|---|
-| `400` | "No hay HTML para corregir." · "El HTML es demasiado largo para corregirlo con la IA (máximo 100 000 caracteres)." · "No hay problemas para corregir." · "Se pueden corregir hasta 30 problemas a la vez." |
+| `400` | "No hay HTML para corregir." · "El HTML es demasiado largo para corregirlo con la IA (máximo 100 000 caracteres)." · "No hay problemas para corregir." · "Se pueden corregir hasta 30 problemas a la vez." · "Se pueden corregir hasta 30 elementos a la vez." · "Los problemas enviados no tienen el formato esperado." (validado con Zod: cada problema con `regla`, `ayuda` y al menos un nodo con `selector` y `html` de hasta 4000 caracteres) |
 | `429` | "La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo." (Gemini) · "Pediste muchas correcciones seguidas…" (límite propio) |
 | `502` | "La IA devolvió una corrección inválida dos veces…" · "La IA tardó demasiado en responder…" · "No se pudo consultar a la IA: …" |
 | `503` | "La IA no está configurada en el servidor." |
