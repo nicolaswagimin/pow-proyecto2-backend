@@ -2,7 +2,33 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
-## [Sin publicar] · 2026-10-12
+## [Sin publicar] · 2026-10-17
+
+### Agregado
+- `POST /api/paginas/descargar`: descarga una página por URL con protección contra SSRF (solo http/https en los puertos 80 y 443, DNS validado con todas sus IPs, conexión a la IP validada, hasta 3 redirecciones revisadas, 8 s, 2 MB y solo HTML). Límite de 30 descargas cada 15 min por usuario.
+- `POST /api/ia/corregir`: explicación en lenguaje simple y corrección de cada problema, más el documento completo corregido. La respuesta de Gemini se valida con Zod y contra los problemas pedidos, con un reintento.
+- Caché de la IA en la tabla `ia_cache`: la misma entrada nunca vuelve a llamar a Gemini.
+- Historial: `GET`, `POST`, `GET /:id` y `DELETE /:id` en `/api/auditorias`, con validación Zod.
+- Errores de la IA con su código: `429` (cuota agotada, con mensaje claro), `502` (respuesta inválida) y `503` (sin API key o Gemini caído).
+- 74 pruebas con `node:test` (`npm test`): SSRF, descarga, caché, esquema, corrección y rutas. Gemini, DNS y red simulados.
+- Dependencias: `zod` y `undici`.
+
+### Cambiado
+- Modelo por defecto: `gemini-3.5-flash-lite`.
+- El cuerpo JSON acepta hasta 3 MB (las auditorías traen el HTML).
+- Límite de la IA: 20 correcciones cada 15 min por usuario.
+
+### Eliminado
+- El CRUD de ejemplo `/api/items` y la ruta genérica `POST /api/ia`. La tabla `items` deja de crearse pero **no se borra** (ver [ADR 0004](docs/decisiones/0004-no-borrar-items.md)).
+
+### Documentación
+- Actualizados `api.md`, `base-de-datos.md`, `seguridad.md`, `despliegue.md` y `arquitectura-backend.md`.
+- Nuevos: `ia.md`, `analisis-accesibilidad.md` y las decisiones 0001 a 0004.
+
+### Variables de entorno
+- Ninguna nueva. `GEMINI_MODEL` es opcional.
+
+## 2026-10-12 · Documentación
 
 ### Documentación
 - El proyecto pasa a llamarse **a11Lens** en el README.
