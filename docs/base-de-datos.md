@@ -5,17 +5,20 @@ PostgreSQL alojado en Neon (también funciona con Supabase o un PostgreSQL local
 ## Diagrama
 
 ```
-usuarios                          items
-┌───────────────────────────┐     ┌──────────────────────────────┐
-│ id            SERIAL  PK  │◄──┐ │ id           SERIAL  PK      │
-│ nombre        VARCHAR(100)│   │ │ titulo       VARCHAR(200)    │
-│ email         VARCHAR(255)│   └─┤ usuario_id   INTEGER FK      │
-│ password_hash TEXT        │     │ descripcion  TEXT            │
-│ google_id     VARCHAR(255)│     │ creado_en    TIMESTAMP       │
-│ avatar_url    TEXT        │     └──────────────────────────────┘
-│ proveedor     VARCHAR(20) │
-│ creado_en     TIMESTAMP   │     Un usuario tiene muchos items.
-└───────────────────────────┘     Al borrar el usuario se borran sus items.
+usuarios                          auditorias                          ia_cache
+┌───────────────────────────┐     ┌──────────────────────────────┐    ┌──────────────────────────┐
+│ id            SERIAL  PK  │◄──┐ │ id                SERIAL PK  │    │ clave     CHAR(64) PK    │
+│ nombre        VARCHAR(100)│   └─┤ usuario_id        INTEGER FK │    │ respuesta JSONB          │
+│ email         VARCHAR(255)│     │ pagina            VARCHAR(300)│    │ creado_en TIMESTAMPTZ    │
+│ password_hash TEXT        │     │ origen            VARCHAR(10)│    └──────────────────────────┘
+│ google_id     VARCHAR(255)│     │ html              TEXT       │    (sin relación: la misma
+│ avatar_url    TEXT        │     │ puntaje           SMALLINT   │     entrada sirve a cualquier
+│ proveedor     VARCHAR(20) │     │ resumen           JSONB      │     usuario)
+│ creado_en     TIMESTAMP   │     │ problemas         JSONB      │
+└───────────────────────────┘     │ html_corregido    TEXT NULL  │
+                                  │ puntaje_corregido SMALLINT NULL│
+                                  │ creado_en         TIMESTAMPTZ│
+                                  └──────────────────────────────┘
 ```
 
 ## `usuarios`
@@ -33,24 +36,39 @@ usuarios                          items
 
 `password_hash` y `google_id` nunca salen del backend: las consultas usan `COLUMNAS_PUBLICAS` (`id, nombre, email, avatar_url, proveedor, creado_en`).
 
-## `items`
+## `auditorias`
+
+El historial: cada vez que la persona pulsa **Guardar en el historial** se crea una fila.
 
 | Columna | Tipo | Restricciones | Descripción |
 |---|---|---|---|
 | `id` | `SERIAL` | `PRIMARY KEY` | |
-| `titulo` | `VARCHAR(200)` | `NOT NULL` | |
-| `descripcion` | `TEXT` | `DEFAULT ''` | |
-| `creado_en` | `TIMESTAMP` | `DEFAULT NOW()` | Orden de la lista (más nuevos primero) |
-| `usuario_id` | `INTEGER` | `REFERENCES usuarios(id) ON DELETE CASCADE` | Dueño del item |
+| `usuario_id` | `INTEGER` | `NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE` | Dueño de la auditoría |
+| `pagina` | `VARCHAR(300)` | `NOT NULL` | Agrupa las auditorías de una misma página: la URL final, el nombre del archivo o el nombre escrito para el HTML pegado |
+| `origen` | `VARCHAR(10)` | `NOT NULL` | `pegado`, `archivo` o `url` |
+| `html` | `TEXT` | `NOT NULL` | El HTML auditado (hasta 2 MB) |
+| `puntaje` | `SMALLINT` | `NOT NULL` | 0 a 100 (fórmula en [analisis-accesibilidad.md](analisis-accesibilidad.md#puntaje)) |
+| `resumen` | `JSONB` | `NOT NULL` | Reglas incumplidas por gravedad: `{ critico, serio, moderado, menor }` |
+| `problemas` | `JSONB` | `NOT NULL` | Los problemas de axe ya traducidos (regla, gravedad, criterios, nodos) |
+| `html_corregido` | `TEXT` | `NULL` | Documento corregido por la IA, si se pidió |
+| `puntaje_corregido` | `SMALLINT` | `NULL` | Puntaje del documento corregido, verificado con axe |
+| `creado_en` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Orden del historial y de la evolución |
 
-Índice: `items_usuario_id_idx` sobre `usuario_id`, porque todas las consultas filtran por él.
+Índice: `auditorias_usuario_pagina_idx` sobre `(usuario_id, pagina, creado_en DESC)`.
 
-`usuario_id` se agrega con `ALTER TABLE … ADD COLUMN IF NOT EXISTS` para que las bases creadas antes de la autenticación se actualicen solas.
+## `ia_cache`
+
+Respuestas de Gemini ya validadas. `clave` es el SHA-256 del HTML, los problemas y la versión del prompt (ver [ia.md](ia.md#cuota-caché-y-límites)); `respuesta`, la corrección. Se escribe con `ON CONFLICT DO NOTHING`.
+
+### La tabla `items`
+
+Era el CRUD de ejemplo. La API ya no la usa y `schema.sql` ya no la crea, pero **no la borra** para no perder datos de bases existentes (mismo criterio que en CodeToDiagram). Para eliminarla: `DROP TABLE IF EXISTS items;`.
 
 ## Relaciones
 
-- `usuarios 1 ── N items` por `items.usuario_id`.
-- Borrar un usuario borra sus items (`ON DELETE CASCADE`).
+- `usuarios 1 ── N auditorias` por `auditorias.usuario_id`.
+- Borrar un usuario borra sus auditorías (`ON DELETE CASCADE`).
+- `ia_cache` no se relaciona con nadie.
 
 ## Consultas que hace la API
 
@@ -59,9 +77,11 @@ usuarios                          items
 | Registro | `INSERT INTO usuarios (nombre, email, password_hash, proveedor) VALUES ($1, $2, $3, 'local') RETURNING …` |
 | Login | `SELECT …, password_hash FROM usuarios WHERE email = $1` |
 | Validar token | `SELECT … FROM usuarios WHERE id = $1` (en cada petición protegida) |
-| Listar items | `SELECT * FROM items WHERE usuario_id = $1 ORDER BY creado_en DESC, id DESC` |
-| Crear item | `INSERT INTO items (titulo, descripcion, usuario_id) VALUES ($1, $2, $3) RETURNING *` |
-| Borrar item | `DELETE FROM items WHERE id = $1 AND usuario_id = $2` |
+| Guardar auditoría | `INSERT INTO auditorias (usuario_id, pagina, origen, html, puntaje, resumen, problemas, html_corregido, puntaje_corregido) VALUES (…) RETURNING …` |
+| Historial | `SELECT id, pagina, origen, puntaje, resumen, puntaje_corregido, creado_en FROM auditorias WHERE usuario_id = $1 ORDER BY creado_en DESC, id DESC` |
+| Abrir | `SELECT … FROM auditorias WHERE usuario_id = $1 AND id = $2` |
+| Borrar | `DELETE FROM auditorias WHERE usuario_id = $1 AND id = $2` |
+| Caché de IA | `SELECT respuesta FROM ia_cache WHERE clave = $1` · `INSERT … ON CONFLICT (clave) DO NOTHING` |
 | Salud | `SELECT 1` |
 
 Todas son consultas parametrizadas (`$1`, `$2`…), así que no hay inyección SQL.
@@ -69,7 +89,3 @@ Todas son consultas parametrizadas (`$1`, `$2`…), así que no hay inyección S
 ## Conexión
 
 `src/db.js` crea un `pg.Pool` con `DATABASE_URL`, SSL activado salvo que `DB_SSL=false` y un tiempo máximo de conexión de 5 s. Un error en una conexión inactiva se registra sin tumbar el servidor.
-
-## Próximo paso del tema
-
-`items` es el CRUD de ejemplo. Para a11Lens, la tabla natural es `auditorias`: guardar cada auditoría con el HTML de entrada, el puntaje, los problemas y la propuesta corregida, para el historial. Debe mantener `usuario_id` con el mismo filtro por usuario.
