@@ -19,3 +19,15 @@ function estable(valor) {
 export function claveDe(entrada, version = '') {
   return createHash('sha256').update(`${version}\n${estable(entrada)}`).digest('hex');
 }
+
+export async function leer(clave) {
+  const { rows } = await pool.query('SELECT respuesta FROM ia_cache WHERE clave = $1', [clave]);
+  return rows[0]?.respuesta ?? null;
+}
+
+export async function escribir(clave, respuesta) {
+  await pool.query(
+    'INSERT INTO ia_cache (clave, respuesta) VALUES ($1, $2) ON CONFLICT (clave) DO NOTHING',
+    [clave, JSON.stringify(respuesta)],
+  );
+}
