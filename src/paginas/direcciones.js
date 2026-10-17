@@ -74,3 +74,30 @@ export function esIpPrivada(ip) {
   if (tipo === 6) return v6Privada(ip);
   return true;
 }
+
+const PUERTOS = new Set(['', '80', '443']);
+
+// Valida la forma de la URL y, si el host es una IP escrita a mano, que sea pública. La resolución
+// DNS (un dominio que apunta a una IP interna) se revisa al descargar (descargar.js).
+export function validarUrl(texto) {
+  let url;
+  try {
+    url = new URL(String(texto).trim());
+  } catch {
+    throw new ErrorSsrf('Eso no es una URL válida. Escribe la dirección completa, con https://.');
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new ErrorSsrf('Solo se pueden auditar páginas con http o https.');
+  }
+  if (url.username || url.password) {
+    throw new ErrorSsrf('La URL no puede incluir usuario ni contraseña.');
+  }
+  if (!PUERTOS.has(url.port)) {
+    throw new ErrorSsrf('Solo se admiten los puertos 80 y 443.');
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, '');
+  if (host === 'localhost' || host.endsWith('.localhost') || (isIP(host) && esIpPrivada(host))) {
+    throw new ErrorSsrf('No se pueden auditar direcciones internas o locales.');
+  }
+  return url;
+}
