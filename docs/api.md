@@ -20,7 +20,7 @@ URL base: `http://localhost:3002/api` en local y `https://pow-proyecto2-backend.
 
 ### `GET /api/health`
 
-Pública. Dice si el servidor, la base de datos y la IA están disponibles. El frontend la usa para dibujar el estado del sistema.
+Pública. Dice si el servidor, la base de datos y la IA están disponibles. La usan los health checks de Render y `demo.sh`.
 
 ```json
 { "ok": true, "db": true, "ia": true }
@@ -103,70 +103,87 @@ Response `200`:
 
 Errores: los `401` comunes y `500` "No se pudo verificar la sesión. Revisa la base de datos."
 
-## Items (CRUD de ejemplo)
+## Descargar una página (auditoría por URL)
 
-Todas protegidas. Cada consulta se filtra por el usuario del token: nadie ve ni borra registros ajenos.
+### `POST /api/paginas/descargar`
 
-### `GET /api/items`
+Protegida, 30 cada 15 min por usuario. Descarga la página **con protección contra SSRF** (ver [seguridad.md](seguridad.md#ssrf)); la auditoría se hace después en el navegador.
 
-Response `200`: los items del usuario, del más nuevo al más viejo.
+Request: `{ "url": "https://ejemplo.org/contacto" }`
 
-```json
-[
-  { "id": 12, "titulo": "Mi primer registro", "descripcion": "", "creado_en": "…", "usuario_id": 7 }
-]
-```
+Response `200`: `{ "html": "<!DOCTYPE html>…", "urlFinal": "https://ejemplo.org/contacto" }` (`urlFinal` es la dirección después de seguir las redirecciones; el frontend la usa como `<base>`).
 
-Error: `500` "No se pudieron obtener los registros. Revisa la base de datos."
+| Código | Mensaje |
+|---|---|
+| `400` | "Escribe la dirección de la página." · "Eso no es una URL válida…" · "Solo se pueden auditar páginas con http o https." · "La URL no puede incluir usuario ni contraseña." · "Solo se admiten los puertos 80 y 443." · "No se pueden auditar direcciones internas o locales." |
+| `429` | "Descargaste muchas páginas seguidas…" |
+| `502` | "No encontramos ese dominio…" · "La página tardó demasiado en responder." · "La página supera 2 MB…" · "Esa dirección no es una página HTML." · "La página respondió con el código 404." · "La página hace más de 3 redirecciones." |
 
-### `POST /api/items`
+## Corregir con IA
+
+### `POST /api/ia/corregir`
+
+Protegida, 20 cada 15 min por usuario. Explica cada problema en español simple y propone la corrección por problema y del documento completo (ver [ia.md](ia.md)). La misma entrada sale de la caché sin volver a llamar a Gemini.
 
 Request:
 
 ```json
-{ "titulo": "Mi primer registro", "descripcion": "Opcional" }
-```
-
-Response `201`: el item creado (mismas columnas que en la lista).
-
-| Código | Mensaje |
-|---|---|
-| `400` | "El título es obligatorio." / "El título no puede superar los 200 caracteres." |
-| `500` | "No se pudo crear el registro. Revisa la base de datos." |
-
-### `DELETE /api/items/:id`
-
-Response `204` sin cuerpo.
-
-| Código | Mensaje |
-|---|---|
-| `400` | "El id no es válido." (no es un entero positivo) |
-| `404` | "El registro no existe." (también si es de otro usuario) |
-| `500` | "No se pudo eliminar el registro. Revisa la base de datos." |
-
-## IA
-
-### `POST /api/ia`
-
-Protegida, con límite de 30 preguntas cada 15 minutos por usuario.
-
-Request:
-
-```json
-{ "pregunta": "Hola, ¿quién eres?" }
+{
+  "html": "<main><img src=\"a.png\"></main>",
+  "problemas": [
+    { "regla": "image-alt", "ayuda": "Las imágenes deben tener texto alternativo.",
+      "nodos": [{ "selector": "img", "html": "<img src=\"a.png\">" }] }
+  ]
+}
 ```
 
 Response `200`:
 
 ```json
-{ "respuesta": "Soy un asistente…" }
+{
+  "problemas": [
+    { "regla": "image-alt", "selector": "img",
+      "explicacion": "La imagen no tiene texto alternativo: quien usa lector de pantalla no sabe qué muestra.",
+      "original": "<img src=\"a.png\">", "corregido": "<img src=\"a.png\" alt=\"Logo de la tienda\">" }
+  ],
+  "documento": "<main><img src=\"a.png\" alt=\"Logo de la tienda\"></main>",
+  "desdeCache": false
+}
 ```
 
 | Código | Mensaje |
 |---|---|
-| `400` | "Escribe una pregunta." |
-| `429` | "Hiciste muchas preguntas seguidas. Espera unos minutos y vuelve a intentarlo." |
-| `502` | El error de Gemini: "La IA no está configurada: falta GEMINI_API_KEY…", "Error al consultar Gemini: …" o "La IA no devolvió ninguna respuesta…" |
+| `400` | "No hay HTML para corregir." · "El HTML es demasiado largo para corregirlo con la IA (máximo 100 000 caracteres)." · "No hay problemas para corregir." · "Se pueden corregir hasta 30 problemas a la vez." |
+| `429` | "La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo." (Gemini) · "Pediste muchas correcciones seguidas…" (límite propio) |
+| `502` | "La IA devolvió una corrección inválida dos veces…" · "La IA tardó demasiado en responder…" · "No se pudo consultar a la IA: …" |
+| `503` | "La IA no está configurada en el servidor." |
+
+## Auditorías (historial)
+
+Todas protegidas y filtradas por el usuario del token.
+
+| Método | Ruta | Qué hace | Respuesta |
+|---|---|---|---|
+| `GET` | `/api/auditorias` | Historial, del más reciente al más antiguo (sin `html` ni `problemas`) | `200` `[{ id, pagina, origen, puntaje, resumen, puntaje_corregido, creado_en }]` |
+| `POST` | `/api/auditorias` | Guarda una auditoría | `201` con la fila |
+| `GET` | `/api/auditorias/:id` | Una auditoría completa | `200` · `404` "Esa auditoría no existe o no es tuya." |
+| `DELETE` | `/api/auditorias/:id` | Borra una auditoría propia | `204` · `404` |
+
+Cuerpo de `POST` (validado con Zod; el primer error vuelve como `400`):
+
+```json
+{
+  "pagina": "https://ejemplo.org/",  "origen": "url",
+  "html": "…", "puntaje": 62,
+  "resumen": { "critico": 2, "serio": 1, "moderado": 0, "menor": 0 },
+  "problemas": [ … ],
+  "htmlCorregido": "…", "puntajeCorregido": 100
+}
+```
+
+`origen` es `pegado`, `archivo` o `url`; `html` y `htmlCorregido` hasta 2 MB; `puntaje` de 0 a 100. Un id que no es un entero positivo responde `400`.
+
+Las rutas `/api/items` y la `/api/ia` de texto libre se eliminaron: responden `404`.
 
 ## Probar con curl
 
@@ -176,6 +193,7 @@ TOKEN=$(curl -s -X POST http://localhost:3002/api/auth/registro -H "Content-Type
   | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
 
 curl http://localhost:3002/api/auth/yo -H "Authorization: Bearer $TOKEN"
-curl -X POST http://localhost:3002/api/items -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"titulo":"Mi primer registro"}'
-curl -X POST http://localhost:3002/api/ia -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"pregunta":"Hola"}'
+curl -X POST http://localhost:3002/api/paginas/descargar -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"url":"https://example.org"}'
+curl -X POST http://localhost:3002/api/paginas/descargar -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" -d '{"url":"http://169.254.169.254/"}'   # 400: dirección interna
+curl http://localhost:3002/api/auditorias -H "Authorization: Bearer $TOKEN"
 ```
