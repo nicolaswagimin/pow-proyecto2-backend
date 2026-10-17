@@ -50,7 +50,7 @@ El historial: cada vez que la persona pulsa **Guardar en el historial** se crea 
 | `puntaje` | `SMALLINT` | `NOT NULL` | 0 a 100 (fórmula en [analisis-accesibilidad.md](analisis-accesibilidad.md#puntaje)) |
 | `resumen` | `JSONB` | `NOT NULL` | Reglas incumplidas por gravedad: `{ critico, serio, moderado, menor }` |
 | `problemas` | `JSONB` | `NOT NULL` | Los problemas de axe ya traducidos (regla, gravedad, criterios, nodos) |
-| `html_corregido` | `TEXT` | `NULL` | Documento corregido por la IA, si se pidió |
+| `html_corregido` | `TEXT` | `NULL` | Documento corregido (el HTML original con las correcciones verificadas), si se pidió |
 | `puntaje_corregido` | `SMALLINT` | `NULL` | Puntaje del documento corregido, verificado con axe |
 | `creado_en` | `TIMESTAMPTZ` | `DEFAULT NOW()` | Orden del historial y de la evolución |
 
@@ -58,7 +58,7 @@ El historial: cada vez que la persona pulsa **Guardar en el historial** se crea 
 
 ## `ia_cache`
 
-Respuestas de Gemini ya validadas. `clave` es el SHA-256 del HTML, los problemas y la versión del prompt (ver [ia.md](ia.md#cuota-caché-y-límites)); `respuesta`, la corrección. Se escribe con `ON CONFLICT DO NOTHING`.
+Correcciones de Gemini ya validadas, **una fila por fragmento**. `clave` es el SHA-256 de la regla, el fragmento, su contexto (padre, detalle de axe, idioma y título) y la versión del prompt (ver [ia.md](ia.md#cuota-caché-lotes-y-límites)); `respuesta`, `{ explicacion, corregido }`. Las filas del prompt anterior (`correccion-v1`, documento completo) quedan sin uso. Se escribe con `ON CONFLICT DO NOTHING`.
 
 ### La tabla `items`
 
