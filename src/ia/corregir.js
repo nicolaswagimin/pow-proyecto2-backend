@@ -24,11 +24,17 @@ function validarEntradaFragmentos(entrada) {
   throw new ErrorIA(propio?.message ?? 'Los fragmentos enviados no tienen el formato esperado.', 400);
 }
 
-// La clave depende de lo que ve Gemini (regla, fragmento, contexto y versión del prompt), no del
-// id: el mismo fragmento en otra página u otro lote sale de la caché.
-export function claveFragmento(f, pagina) {
-  const { regla, ayuda = '', html, padre = '', resumen = '' } = f;
-  return claveDe({ regla, ayuda, html, padre, resumen, idioma: pagina.idioma, titulo: pagina.titulo }, VERSION_PROMPT);
+const contenido = ({ regla, ayuda = '', html, padre = '', resumen = '' }) => ({ regla, ayuda, html, padre, resumen });
+
+// La clave depende de lo que ve Gemini: el fragmento, su contexto, la versión del prompt y el lote
+// entero en que se pidió (sin ids). Gemini ve todo el lote en un prompt, así que otro fragmento
+// podría influir en la respuesta; con el lote en la clave, nadie puede envenenar la corrección de
+// un fragmento común para otra persona. El mismo lote (la misma página) sí sale de la caché.
+export function claveFragmento(f, pagina, lote) {
+  return claveDe(
+    { ...contenido(f), idioma: pagina.idioma, titulo: pagina.titulo, lote: lote.map(contenido) },
+    VERSION_PROMPT,
+  );
 }
 
 // Corrige fragmentos sueltos: los que están en la caché no se piden; los demás van a Gemini en
@@ -39,7 +45,7 @@ export async function corregirFragmentos(entrada, { llamar = llamarGeminiJson, c
   const resultado = new Map();
   let pendientes = [];
   for (const f of fragmentos) {
-    const guardada = await cache.leer(claveFragmento(f, pagina)).catch(() => null);
+    const guardada = await cache.leer(claveFragmento(f, pagina, fragmentos)).catch(() => null);
     if (guardada) resultado.set(f.id, { id: f.id, ...guardada, desdeCache: true });
     else pendientes.push(f);
   }
@@ -60,7 +66,7 @@ export async function corregirFragmentos(entrada, { llamar = llamarGeminiJson, c
     for (const v of validos) {
       const f = pendientes.find((p) => p.id === v.id);
       const respuesta = { explicacion: v.explicacion, corregido: v.corregido };
-      await cache.escribir(claveFragmento(f, pagina), respuesta).catch(() => {});
+      await cache.escribir(claveFragmento(f, pagina, fragmentos), respuesta).catch(() => {});
       resultado.set(v.id, { id: v.id, ...respuesta, desdeCache: false });
     }
     pendientes = pendientes.filter((p) => !resultado.has(p.id));
