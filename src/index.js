@@ -40,7 +40,8 @@ app.use(
     },
   }),
 );
-app.use(express.json());
+// Las auditorías incluyen el HTML (hasta 2 MB) y sus problemas.
+app.use(express.json({ limit: '3mb' }));
 
 // ---------- Estado ----------
 app.get('/api/health', async (req, res) => {
