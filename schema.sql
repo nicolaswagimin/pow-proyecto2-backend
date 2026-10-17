@@ -42,3 +42,11 @@ CREATE TABLE IF NOT EXISTS auditorias (
   creado_en         TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS auditorias_usuario_pagina_idx ON auditorias (usuario_id, pagina, creado_en DESC);
+
+-- Respuestas de la IA ya calculadas: la misma entrada no vuelve a llamar a Gemini. La clave es el
+-- SHA-256 del HTML, los problemas y la versión del prompt (src/ia/cache.js).
+CREATE TABLE IF NOT EXISTS ia_cache (
+  clave     CHAR(64) PRIMARY KEY,
+  respuesta JSONB NOT NULL,
+  creado_en TIMESTAMPTZ DEFAULT NOW()
+);
