@@ -1,23 +1,35 @@
 # Arquitectura del backend · a11Lens
 
-Node.js 20+ con Express 5, módulos ES, PostgreSQL con `pg` y Gemini por su API REST (sin SDK).
+Node.js 20+ con Express 5 y módulos ES, PostgreSQL con `pg`, Gemini por su API REST, Zod y `undici`. **El análisis de accesibilidad no corre aquí**: lo hace el navegador con axe-core en un iframe aislado (ver [analisis-accesibilidad.md](analisis-accesibilidad.md)). El backend descarga páginas por URL de forma segura, corrige con IA y guarda el historial.
 
 ## Carpetas
 
 ```
-schema.sql               tablas usuarios e items (idempotente, se ejecuta al arrancar)
-.env.example             variables de entorno sin valores
+schema.sql                 tablas usuarios, auditorias e ia_cache (idempotente, se ejecuta al arrancar)
+.env.example               variables de entorno sin valores
 src/
-  index.js               arranque: comprueba JWT_SECRET, CORS, JSON, rutas y manejo de errores
-  db.js                  pool de PostgreSQL, iniciarDB() y dbDisponible()
-  ia.js                  preguntarIA() contra Gemini e INSTRUCCIONES del asistente
+  index.js                 arranque: JWT_SECRET, CORS, JSON (hasta 3 MB), rutas y errores
+  db.js                    pool de PostgreSQL, iniciarDB() y dbDisponible()
+  ia.js                    llamarGeminiJson() y ErrorIA (con el código HTTP para el cliente)
+  ia/
+    prompt.js              instrucciones y prompt de corrección (VERSION_PROMPT)
+    esquema.js             esquema Zod de la respuesta y validación contra lo pedido
+    corregir.js            caché → Gemini → validación → un reintento
+    cache.js               clave SHA-256 estable y lectura/escritura en ia_cache
+  paginas/
+    direcciones.js         validarUrl() y esIpPrivada(): núcleo anti-SSRF
+    descargar.js           descarga con DNS validado, IP fijada, redirecciones, tiempo y tamaño
+  auditorias/
+    repositorio.js         consultas a la tabla auditorias
   middleware/
-    auth.js              requireAuth, firmarToken y COLUMNAS_PUBLICAS
-    limites.js           limiteLogin (por IP) y limiteIA (por usuario)
+    auth.js                requireAuth, firmarToken y COLUMNAS_PUBLICAS
+    limites.js             limiteLogin (IP), limiteIA (20/15 min) y limiteDescargas (30/15 min)
   routes/
-    auth.js              /registro, /login y /yo
-    items.js             CRUD de items filtrado por usuario
-    ia.js                pregunta a la IA
+    auth.js                /registro, /login y /yo
+    paginas.js             POST /descargar
+    ia.js                  POST /corregir
+    auditorias.js          CRUD del historial, con validación Zod
+test/                      node:test: SSRF, descarga, caché, esquema, corrección y rutas (Gemini, DNS y red simulados)
 ```
 
 ## Middleware, en orden
@@ -25,48 +37,40 @@ src/
 | # | Middleware | Alcance | Qué hace |
 |---|---|---|---|
 | 1 | `trust proxy` (1) | Todo | `req.ip` es la IP real detrás del proxy de Render |
-| 2 | `cors` | Todo | Solo los orígenes de `FRONTEND_URL`; sin `Origin` se permite |
-| 3 | `express.json()` | Todo | Lee el cuerpo JSON (hasta 100 kB) |
+| 2 | `cors` | Todo | Solo los orígenes de `FRONTEND_URL` |
+| 3 | `express.json({ limit: '3mb' })` | Todo | Las auditorías traen el HTML (hasta 2 MB) |
 | 4 | `limiteLogin` | `POST /api/auth/login` | 10 intentos cada 15 min por IP |
-| 5 | `requireAuth` | `/api/items`, `/api/ia`, `/api/auth/yo` | Verifica el JWT y carga `req.usuario` desde la base |
-| 6 | `limiteIA` | `/api/ia` (después de `requireAuth`) | 30 preguntas cada 15 min por usuario |
+| 5 | `requireAuth` | `/api/paginas`, `/api/ia`, `/api/auditorias`, `/api/auth/yo` | JWT y usuario desde la base |
+| 6 | `limiteDescargas` / `limiteIA` | `/api/paginas` / `/api/ia` | 30 / 20 cada 15 min por usuario |
 | 7 | 404 de `/api` | Rutas no encontradas | `{ "error": "Ruta no encontrada." }` |
-| 8 | Manejador de errores | Todo | JSON mal formado → `400`; cualquier otro → `500` sin detalles |
+| 8 | Manejador de errores | Todo | JSON mal formado → `400`; otro → `500` |
 
-## Flujo de una petición protegida
-
-Ejemplo: `POST /api/items` con `{ "titulo": "…" }`.
+## Flujo de una auditoría por URL con corrección
 
 ```
-Navegador ──► CORS ──► express.json ──► requireAuth ──► routes/items.js ──► PostgreSQL
-   ▲            │            │              │                 │                 │
-   │       origen no      JSON mal      sin token o       título vacío       error
-   │       permitido      formado       inválido → 401    → 400              → 500
-   │                      → 400
-   └──────────── 201 { id, titulo, descripcion, creado_en, usuario_id } ◄──────┘
+Navegador ── POST /api/paginas/descargar ──► validarUrl → DNS (todas las IPs públicas) → undici con IP fijada
+   │                                          → redirecciones revisadas → ≤ 8 s, ≤ 2 MB, text/html
+   │◄──────────────── { html, urlFinal } ───────┘
+   │
+   ├─ axe-core en un iframe sandbox="allow-scripts" con CSP por nonce y <base href="urlFinal">  (en el navegador)
+   │
+   ├─ POST /api/ia/corregir { html, problemas } ──► claveDe → ia_cache? ── sí ──► respuesta (desdeCache)
+   │                                                     │ no
+   │                                                     ▼
+   │                                    Gemini (JSON) → Zod + regla/selector pedidos → 1 reintento → ia_cache
+   │◄───────────── { problemas, documento } ─────────────┘
+   │
+   ├─ verificación con axe de cada corrección y del documento  (en el navegador)
+   │
+   └─ POST /api/auditorias { pagina, origen, html, puntaje, resumen, problemas, htmlCorregido, puntajeCorregido }
 ```
-
-1. CORS compara el `Origin` con la lista de `FRONTEND_URL`.
-2. `express.json()` convierte el cuerpo; si no es JSON válido, el manejador de errores responde `400`.
-3. `requireAuth` separa `Bearer <token>`, lo verifica con `JWT_SECRET` (solo `HS256`) y busca al usuario por `sub`. Si algo falla responde `401`; si la base falla, `500`.
-4. La ruta valida el título, inserta con `usuario_id = req.usuario.id` y responde `201`.
-
-## Flujo de un login
-
-1. `limiteLogin` cuenta el intento por IP; al pasar de 10 en 15 min responde `429`.
-2. Se normaliza el correo (recorte y minúsculas) y se busca el usuario.
-3. `bcrypt.compare` contra su hash, o contra `HASH_FALSO` si no existe (tiempo parejo).
-4. Si coincide, responde `200 { token, usuario }` sin `password_hash`; si no, `401` con el mensaje genérico.
 
 ## Arranque
 
-1. `dotenv` carga el `.env`.
-2. Sin `JWT_SECRET`, el proceso termina con un mensaje claro.
-3. `app.listen` arranca **antes** de la base de datos: si Neon falla, el servidor sigue arriba, `/api/health` responde `db: false` y el error queda en el log.
-4. `iniciarDB()` ejecuta `schema.sql`.
+1. `dotenv` carga el `.env`; sin `JWT_SECRET` el proceso termina.
+2. El servidor escucha **antes** de conectar la base: si Neon falla, sigue arriba y `/api/health` responde `db: false`.
+3. `iniciarDB()` ejecuta `schema.sql`.
 
-## IA
+## Pruebas
 
-`src/ia.js` llama a `generativelanguage.googleapis.com/v1beta/models/<modelo>:generateContent` con `systemInstruction` (la constante `INSTRUCCIONES`) y la pregunta del usuario. Une las partes de texto de la primera respuesta. Cualquier fallo se convierte en un `Error` con mensaje en español que la ruta devuelve como `502`.
-
-Hoy `INSTRUCCIONES` es un asistente general. Para a11Lens, Gemini explicará cada problema detectado y propondrá el HTML corregido; las instrucciones deberán pedir que explique problemas de accesibilidad (WCAG 2.2) en lenguaje simple y devuelva el HTML corregido.
+`npm test` (74 pruebas). Gemini, el DNS, la red y la base se reemplazan por dobles: no gastan cuota ni tocan Neon. Las rutas se prueban levantando una app Express en un puerto libre.
