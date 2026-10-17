@@ -1,14 +1,19 @@
 # a11Lens · Backend
 
-API de **a11Lens**, un autocorrector de accesibilidad web: la persona pega HTML o una URL, la app detecta los problemas con axe-core, los explica en lenguaje simple y la IA propone el código corregido.
+API de **a11Lens**, un autocorrector de accesibilidad web: la persona pega HTML, sube un archivo o escribe una URL; la app detecta los problemas con axe-core, los explica en lenguaje simple, la IA propone el código corregido y a11Lens **verifica cada corrección volviendo a auditar** antes de mostrarla.
 
-Proyecto 2 de la materia Programación orientada a la web. Node.js + Express 5, PostgreSQL (Neon) y Google Gemini por su API REST.
+Proyecto 2 de la materia Programación orientada a la web. Node.js + Express 5, PostgreSQL (Neon), Google Gemini por su API REST, Zod y undici.
 
 Frontend: <https://github.com/nicolaswagimin/pow-proyecto2-frontend>
 
-## Estado actual
+## Qué hace el backend
 
-Funcionan el registro y el login con JWT, un CRUD de ejemplo (`items`) filtrado por usuario y una ruta de preguntas a Gemini. La función propia de a11Lens todavía no está en la API: Gemini explicará cada problema detectado y propondrá el HTML corregido. Ese es el siguiente paso (ver "Próximos pasos").
+El análisis con axe-core **no corre aquí**: corre en el navegador, dentro de un iframe aislado (ver [docs/decisiones/0001](docs/decisiones/0001-axe-en-iframe-aislado-del-navegador.md)). El backend:
+
+- **Descarga páginas por URL** sin exponer la red interna (protección contra SSRF).
+- **Corrige con IA**: explicación y corrección de cada problema, más el documento completo corregido. Valida la respuesta con Zod y la guarda en caché para no gastar cuota con la misma entrada.
+- **Guarda el historial** de auditorías de cada persona.
+- Autenticación con correo y contraseña (bcrypt + JWT).
 
 ## Requisitos
 
@@ -28,6 +33,14 @@ curl http://localhost:3002/api/health
 
 Si `db` o `ia` salen en `false`, revisa `DATABASE_URL` / `DB_SSL` o `GEMINI_API_KEY`. Aunque falle la base de datos, el servidor arranca igual y muestra el error en la consola. Las tablas se crean solas a partir de `schema.sql`.
 
+## Pruebas
+
+```bash
+npm test                 # 74 pruebas con node:test
+```
+
+Gemini, el DNS, la red y la base se reemplazan por dobles: las pruebas no gastan cuota ni tocan Neon.
+
 ## Endpoints
 
 | Método | Ruta | Acceso | Qué hace |
@@ -36,10 +49,12 @@ Si `db` o `ia` salen en `false`, revisa `DATABASE_URL` / `DB_SSL` o `GEMINI_API_
 | `POST` | `/api/auth/registro` | Pública | Crea la cuenta y devuelve `{ token, usuario }` |
 | `POST` | `/api/auth/login` | Pública, 10 intentos / 15 min por IP | Devuelve `{ token, usuario }` |
 | `GET` | `/api/auth/yo` | Token | Datos del usuario |
-| `GET` | `/api/items` | Token | Items del usuario |
-| `POST` | `/api/items` | Token | Crea un item |
-| `DELETE` | `/api/items/:id` | Token | Borra un item propio |
-| `POST` | `/api/ia` | Token, 30 / 15 min por usuario | Pregunta a Gemini |
+| `POST` | `/api/paginas/descargar` | Token, 30 / 15 min por usuario | Descarga el HTML de una URL pública: `{ html, urlFinal }` |
+| `POST` | `/api/ia/corregir` | Token, 20 / 15 min por usuario | Explicación y corrección de cada problema, y el documento corregido |
+| `GET` | `/api/auditorias` | Token | Historial del usuario (sin el HTML) |
+| `POST` | `/api/auditorias` | Token | Guarda una auditoría |
+| `GET` | `/api/auditorias/:id` | Token | Una auditoría propia, completa |
+| `DELETE` | `/api/auditorias/:id` | Token | Borra una auditoría propia |
 
 El detalle de cada request, response y error está en [docs/api.md](docs/api.md).
 
@@ -48,10 +63,13 @@ El detalle de cada request, response y error está en [docs/api.md](docs/api.md)
 | Documento | Contenido |
 |---|---|
 | [docs/api.md](docs/api.md) | Cada endpoint con request, response y errores |
-| [docs/base-de-datos.md](docs/base-de-datos.md) | Tablas, columnas, relaciones y consultas |
-| [docs/seguridad.md](docs/seguridad.md) | bcrypt, JWT, CORS, límites de intentos y variables de entorno |
+| [docs/ia.md](docs/ia.md) | Prompt, formato de respuesta, validación con Zod, caché y cuota |
+| [docs/analisis-accesibilidad.md](docs/analisis-accesibilidad.md) | Motor aislado, reglas, fórmula del puntaje, verificación y páginas SPA |
+| [docs/base-de-datos.md](docs/base-de-datos.md) | Tablas `usuarios`, `auditorias` e `ia_cache`, relaciones y consultas |
+| [docs/seguridad.md](docs/seguridad.md) | bcrypt, JWT, CORS, SSRF, límites y validación de entradas |
 | [docs/despliegue.md](docs/despliegue.md) | Neon, Render, variables y comprobaciones |
-| [docs/arquitectura-backend.md](docs/arquitectura-backend.md) | Carpetas, middleware y flujo de una petición |
+| [docs/arquitectura-backend.md](docs/arquitectura-backend.md) | Carpetas, middleware y flujo de una auditoría |
+| [docs/decisiones/](docs/decisiones/) | 0001 axe en el navegador · 0002 SSRF con IP fijada · 0003 caché de IA · 0004 no borrar `items` |
 | [CHANGELOG.md](CHANGELOG.md) | Cambios |
 
 ## Variables de entorno
@@ -62,13 +80,15 @@ El detalle de cada request, response y error está en [docs/api.md](docs/api.md)
 | `DATABASE_URL` | Cadena de conexión de PostgreSQL | — |
 | `DB_SSL` | `false` para un PostgreSQL local sin SSL | SSL activado |
 | `GEMINI_API_KEY` | API key de Gemini (solo vive en el backend) | — |
-| `GEMINI_MODEL` | Modelo de Gemini | `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Modelo de Gemini | `gemini-3.5-flash-lite` |
 | `FRONTEND_URL` | Orígenes permitidos por CORS, separados por comas | `http://localhost:4200` |
 | `JWT_SECRET` | Secreto de las sesiones. **Obligatorio** | — |
 | `JWT_EXPIRES_IN` | Duración de la sesión | `7d` |
 
+No hay variables nuevas respecto a la versión anterior.
+
 ## Próximos pasos
 
-- Reemplazar `items` por `auditorias`, para guardar cada auditoría con el HTML de entrada, el puntaje, los problemas y la propuesta corregida, para el historial.
-- Cambiar `INSTRUCCIONES` en `src/ia.js` para que explique problemas de accesibilidad (WCAG 2.2) en lenguaje simple y devuelva el HTML corregido.
+- Borrar a mano la tabla `items` en Neon cuando ya no haga falta (el `DROP` está comentado en `schema.sql`).
 - Cubrir los pendientes de [docs/seguridad.md](docs/seguridad.md): límite en el registro, cabeceras de seguridad y revocación de tokens.
+- Limpiar las entradas antiguas de `ia_cache` si la tabla crece demasiado.
