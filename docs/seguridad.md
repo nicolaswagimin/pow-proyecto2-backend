@@ -28,7 +28,8 @@
 | Ruta | Límite | Clave |
 |---|---|---|
 | `POST /api/auth/login` | 10 cada 15 min | IP (`trust proxy` en 1 para leer la IP real detrás del proxy de Render) |
-| `POST /api/ia` | 30 cada 15 min | id del usuario |
+| `POST /api/ia/corregir` | 20 cada 15 min | id del usuario |
+| `POST /api/paginas/descargar` | 30 cada 15 min | id del usuario |
 
 Al pasarlo responden `429` con un mensaje en español y las cabeceras estándar `RateLimit` (borrador 8). El contador vive en memoria: se reinicia al reiniciar el servidor y no se comparte entre instancias.
 
@@ -36,8 +37,23 @@ Al pasarlo responden `429` con un mensaje en español y las cabeceras estándar 
 
 - Todas las consultas SQL son parametrizadas.
 - Las columnas sensibles (`password_hash`, `google_id`) nunca se devuelven: se usa `COLUMNAS_PUBLICAS`.
-- Los items se filtran siempre por `usuario_id`; un item ajeno responde `404`, igual que uno inexistente, para no revelar que existe.
+- Las auditorías se filtran siempre por `usuario_id`; una ajena responde `404`, igual que una inexistente, para no revelar que existe.
+- Lo que devuelve Gemini es dato no confiable: se valida con Zod antes de usarlo, y las entradas de las rutas (auditorías) también.
 - La API key de Gemini solo vive en el backend y viaja en la cabecera `x-goog-api-key`, no en la URL.
+
+## SSRF
+
+`POST /api/paginas/descargar` hace que el servidor pida una URL que escribe el usuario. Sin protección, alguien podría usarlo para escanear la red interna de Render o leer el servicio de metadatos de la nube (`169.254.169.254`). Defensas (`src/paginas/direcciones.js` y `descargar.js`):
+
+1. **Forma de la URL**: solo `http:` y `https:`; sin usuario ni contraseña; solo puertos 80 y 443; `localhost` y `*.localhost` rechazados.
+2. **IPs prohibidas**: privadas (10/8, 172.16/12, 192.168/16), loopback (127/8, ::1), link-local (169.254/16, fe80::/10), CGNAT (100.64/10), "esta red" (0/8), multicast, reservadas, de documentación y de pruebas, únicas locales IPv6 (fc00::/7) y `::`. Las IPv4 escritas dentro de IPv6 (`::ffff:127.0.0.1`, `::ffff:7f00:1`) y las de NAT64 (`64:ff9b::/96`) se revisan como IPv4.
+3. **DNS**: se resuelven **todas** las direcciones del dominio y se rechaza si **cualquiera** es prohibida (un dominio público que apunta a `127.0.0.1`, como `localtest.me`, queda bloqueado; comprobado).
+4. **IP fijada**: la conexión se hace a la IP ya validada (`undici` con un `lookup` propio), sin volver a resolver: evita el DNS rebinding.
+5. **Redirecciones manuales**: como mucho 3, y cada destino pasa de nuevo por 1–4.
+6. **Límites**: 8 s en total, 2 MB (se corta la lectura), solo `text/html` o `application/xhtml+xml`.
+7. **Sin ejecución**: el servidor nunca interpreta el HTML; la auditoría corre en el navegador, en un iframe aislado sin acceso a la app.
+
+Errores de forma o de dirección responden `400`; de red, `502`; todos con mensaje en español. Pruebas: `test/direcciones.test.js` y `test/descargar.test.js` (DNS y red simulados).
 
 ## Variables de entorno
 
