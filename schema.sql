@@ -41,3 +41,4 @@ CREATE TABLE IF NOT EXISTS auditorias (
   puntaje_corregido SMALLINT NULL,
   creado_en         TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS auditorias_usuario_pagina_idx ON auditorias (usuario_id, pagina, creado_en DESC);
