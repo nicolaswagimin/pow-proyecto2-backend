@@ -60,10 +60,14 @@ function v6Privada(ip) {
   const mapeada = ceros(0, 5) && g[5] === 0xffff;
   const nat64 = g[0] === 0x64 && g[1] === 0xff9b && ceros(2, 6);
   if (mapeada || nat64) return v4Privada(`${g[6] >> 8}.${g[6] & 255}.${g[7] >> 8}.${g[7] & 255}`);
-  if ((g[0] & 0xfe00) === 0xfc00) return true; // fc00::/7, únicas locales
-  if ((g[0] & 0xffc0) === 0xfe80) return true; // fe80::/10, link-local
-  if ((g[0] & 0xff00) === 0xff00) return true; // ff00::/8, multicast
+  // Fuera de eso, solo se aceptan las unicast globales (2000::/3): así quedan fuera ::/96
+  // (IPv4 compatible), ::ffff:0:0/96 (IPv4 traducida), 64:ff9b:1::/48 (NAT64 local), fc00::/7,
+  // fe80::/10, fec0::/10, ff00::/8, 100::/64 y cualquier rango que se asigne en el futuro.
+  if ((g[0] & 0xe000) !== 0x2000) return true;
+  if (g[0] === 0x2002) return true; // 6to4: lleva una IPv4 dentro
+  if (g[0] === 0x2001 && g[1] === 0) return true; // Teredo: lleva una IPv4 dentro
   if (g[0] === 0x2001 && g[1] === 0x0db8) return true; // documentación
+  if ((g[0] & 0xfff0) === 0x3ff0) return true; // 3fff::/20, documentación
   return false;
 }
 
