@@ -33,3 +33,29 @@ test('llamarGeminiJson pide JSON y devuelve el texto', async () => {
   assert.equal(cuerpo.generationConfig.responseMimeType, 'application/json');
 });
 
+
+const ok = () => new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"a":1}' }] } }] }));
+const ocupado = () =>
+  new Response(JSON.stringify({ error: { message: 'This model is currently experiencing high demand.' } }), { status: 503 });
+
+test('llamarGeminiJson reintenta una vez si Gemini está ocupado (503)', async () => {
+  process.env.GEMINI_API_KEY = 'clave-de-prueba';
+  const respuestas = [ocupado(), ok()];
+  let llamadas = 0;
+  const fetchImpl = async () => respuestas[llamadas++];
+  assert.equal(await llamarGeminiJson({ sistema: 'S', usuario: 'U', fetchImpl, esperaReintentoMs: 0 }), '{"a":1}');
+  assert.equal(llamadas, 2);
+});
+
+test('llamarGeminiJson: si sigue ocupado, 503 con un mensaje claro', async () => {
+  process.env.GEMINI_API_KEY = 'clave-de-prueba';
+  let llamadas = 0;
+  const fetchImpl = async () => {
+    llamadas++;
+    return ocupado();
+  };
+  const err = await errorDe(llamarGeminiJson({ sistema: 'S', usuario: 'U', fetchImpl, esperaReintentoMs: 0 }));
+  assert.equal(llamadas, 2);
+  assert.equal(err.estado, 503);
+  assert.equal(err.message, 'La IA está muy solicitada en este momento. Espera unos segundos y pulsa «Corregir más».');
+});

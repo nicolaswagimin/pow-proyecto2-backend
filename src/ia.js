@@ -16,9 +16,30 @@ export class ErrorIA extends Error {
 }
 
 const TIEMPO_MAXIMO_MS = 60_000;
+const ESPERA_REINTENTO_MS = 1500;
 
 // Pide a Gemini una respuesta en modo JSON y devuelve el texto tal cual (se valida después).
-export async function llamarGeminiJson({ sistema, usuario, fetchImpl = fetch, tiempoMaximoMs = TIEMPO_MAXIMO_MS }) {
+// Si Gemini está ocupado (503, "high demand", suele durar segundos), reintenta una vez.
+export async function llamarGeminiJson({ esperaReintentoMs = ESPERA_REINTENTO_MS, ...opciones }) {
+  try {
+    return await llamarUnaVez(opciones);
+  } catch (err) {
+    if (!(err instanceof ErrorOcupado)) throw err;
+    await new Promise((r) => setTimeout(r, esperaReintentoMs));
+    try {
+      return await llamarUnaVez(opciones);
+    } catch (otro) {
+      if (otro instanceof ErrorOcupado) {
+        throw new ErrorIA('La IA está muy solicitada en este momento. Espera unos segundos y pulsa «Corregir más».', 503);
+      }
+      throw otro;
+    }
+  }
+}
+
+class ErrorOcupado extends Error {}
+
+async function llamarUnaVez({ sistema, usuario, fetchImpl = fetch, tiempoMaximoMs = TIEMPO_MAXIMO_MS }) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) throw new ErrorIA('La IA no está configurada en el servidor.', 503);
 
@@ -47,6 +68,7 @@ export async function llamarGeminiJson({ sistema, usuario, fetchImpl = fetch, ti
   if (respuesta.status === 429) {
     throw new ErrorIA('La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo.', 429);
   }
+  if (respuesta.status === 503) throw new ErrorOcupado();
   if (!respuesta.ok) {
     throw new ErrorIA(`No se pudo consultar a la IA: ${datos?.error?.message || `código ${respuesta.status}`}`, 502);
   }
