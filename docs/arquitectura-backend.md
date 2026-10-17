@@ -12,9 +12,9 @@ src/
   db.js                    pool de PostgreSQL, iniciarDB() y dbDisponible()
   ia.js                    llamarGeminiJson() y ErrorIA (con el código HTTP para el cliente)
   ia/
-    prompt.js              instrucciones y prompt de corrección (VERSION_PROMPT)
-    esquema.js             esquema Zod de la respuesta y validación contra lo pedido
-    corregir.js            caché → Gemini → validación → un reintento
+    prompt.js              instrucciones y prompt por fragmentos (VERSION_PROMPT)
+    esquema.js             esquemas Zod de la entrada y de cada fragmento de la respuesta
+    corregir.js            caché por fragmento → Gemini con los que faltan → validación → un reintento
     cache.js               clave SHA-256 estable y lectura/escritura en ia_cache
   paginas/
     direcciones.js         validarUrl() y esIpPrivada(): núcleo anti-SSRF
@@ -27,7 +27,7 @@ src/
   routes/
     auth.js                /registro, /login y /yo
     paginas.js             POST /descargar
-    ia.js                  POST /corregir
+    ia.js                  POST /fragmentos
     auditorias.js          CRUD del historial, con validación Zod
 test/                      node:test: SSRF, descarga, caché, esquema, corrección y rutas (Gemini, DNS y red simulados)
 ```
@@ -54,13 +54,15 @@ Navegador ── POST /api/paginas/descargar ──► validarUrl → DNS (todas
    │
    ├─ axe-core en un iframe sandbox="allow-scripts" con CSP por nonce y <base href="urlFinal">  (en el navegador)
    │
-   ├─ POST /api/ia/corregir { html, problemas } ──► claveDe → ia_cache? ── sí ──► respuesta (desdeCache)
-   │                                                     │ no
-   │                                                     ▼
-   │                                    Gemini (JSON) → Zod + regla/selector pedidos → 1 reintento → ia_cache
-   │◄───────────── { problemas, documento } ─────────────┘
+   ├─ ubicar cada elemento en el HTML original (parse5) y armar lotes por gravedad  (en el navegador)
    │
-   ├─ verificación con axe de cada corrección y del documento  (en el navegador)
+   ├─ POST /api/ia/fragmentos { pagina, fragmentos ≤ 10 } ──► por fragmento: ia_cache? ── sí ──► (desdeCache)
+   │                                                               │ no
+   │                                                               ▼
+   │                     Gemini (JSON) con los que faltan → Zod por item → 1 reintento de los que faltan → ia_cache
+   │◄──────────── { fragmentos, sinRespuesta } ────────────────────┘      (el documento nunca viaja)
+   │
+   ├─ reemplazar cada fragmento en el HTML original y verificar con axe  (en el navegador)
    │
    └─ POST /api/auditorias { pagina, origen, html, puntaje, resumen, problemas, htmlCorregido, puntajeCorregido }
 ```
@@ -73,4 +75,4 @@ Navegador ── POST /api/paginas/descargar ──► validarUrl → DNS (todas
 
 ## Pruebas
 
-`npm test` (89 pruebas). Gemini, el DNS, la red y la base se reemplazan por dobles: no gastan cuota ni tocan Neon. Las rutas se prueban levantando una app Express en un puerto libre.
+`npm test` (97 pruebas). Gemini, el DNS, la red y la base se reemplazan por dobles: no gastan cuota ni tocan Neon. Las rutas se prueban levantando una app Express en un puerto libre.
