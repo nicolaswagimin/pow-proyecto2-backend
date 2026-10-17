@@ -24,3 +24,20 @@ CREATE TABLE IF NOT EXISTS items (
 -- Cada item pertenece a un usuario; si se borra el usuario, se borran sus items.
 ALTER TABLE items ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS items_usuario_id_idx ON items (usuario_id);
+
+-- Auditorías guardadas por cada usuario (el historial). "pagina" agrupa las auditorías de una
+-- misma página para ver la evolución del puntaje: la URL normalizada, el nombre del archivo o el
+-- nombre que la persona escribe para el HTML pegado.
+CREATE TABLE IF NOT EXISTS auditorias (
+  id                SERIAL PRIMARY KEY,
+  usuario_id        INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE CASCADE,
+  pagina            VARCHAR(300) NOT NULL,
+  origen            VARCHAR(10) NOT NULL,
+  html              TEXT NOT NULL,
+  puntaje           SMALLINT NOT NULL,
+  resumen           JSONB NOT NULL,
+  problemas         JSONB NOT NULL,
+  html_corregido    TEXT NULL,
+  puntaje_corregido SMALLINT NULL,
+  creado_en         TIMESTAMPTZ DEFAULT NOW()
+);
