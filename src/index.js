@@ -4,10 +4,11 @@ import cors from 'cors';
 import { iniciarDB, dbDisponible } from './db.js';
 import { iaDisponible } from './ia.js';
 import { requireAuth } from './middleware/auth.js';
-import { limiteIA } from './middleware/limites.js';
+import { limiteDescargas, limiteIA } from './middleware/limites.js';
 import authRouter from './routes/auth.js';
 import itemsRouter from './routes/items.js';
 import iaRouter from './routes/ia.js';
+import { rutasPaginas } from './routes/paginas.js';
 
 const PORT = process.env.PORT || 3002;
 
@@ -51,6 +52,7 @@ app.use('/api/auth', authRouter);
 // ---------- Rutas protegidas ----------
 app.use('/api/items', requireAuth, itemsRouter);
 app.use('/api/ia', requireAuth, limiteIA, iaRouter);
+app.use('/api/paginas', requireAuth, limiteDescargas, rutasPaginas());
 
 // ---------- Errores ----------
 app.use('/api', (req, res) => {
