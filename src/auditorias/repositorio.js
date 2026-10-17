@@ -43,3 +43,12 @@ export async function obtener(usuarioId, id) {
   );
   return rows[0] ?? null;
 }
+
+// Devuelve true si se borró algo.
+export async function eliminar(usuarioId, id) {
+  const { rowCount } = await pool.query('DELETE FROM auditorias WHERE usuario_id = $1 AND id = $2', [
+    usuarioId,
+    id,
+  ]);
+  return rowCount > 0;
+}
