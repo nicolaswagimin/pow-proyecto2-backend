@@ -65,7 +65,8 @@ El mensaje del usuario lleva el idioma y el título, y por cada fragmento su id,
 
 - `explicacion`: 1 a 600 caracteres;
 - `corregido`: 1 a 8000 y **distinto** del fragmento enviado;
-- el `id` debe ser uno de los pedidos (un id repetido cuenta una vez).
+- el `id` debe ser uno de los pedidos (un id repetido cuenta una vez);
+- **no puede agregar código ejecutable** que el fragmento no traía: `<script>`, `<iframe>`, `<object>`, `<embed>`, `<base>`, `meta http-equiv`, atributos `on*`, `srcdoc` ni URLs `javascript:`. El frontend audita la versión saneada, así que axe nunca lo vería; el frontend repite la comprobación.
 
 Los items válidos se aceptan aunque otros fallen.
 
@@ -77,7 +78,8 @@ Los items válidos se aceptan aunque otros fallen.
 ## Cuota: caché, lotes y límites
 
 - **Caché por fragmento** (`ia_cache`):
-  - La clave es el SHA-256 de `VERSION_PROMPT` más `{ regla, ayuda, html, padre, resumen, idioma, titulo }` (JSON con las claves ordenadas). No depende del `id` ni de la página.
+  - La clave es el SHA-256 de `VERSION_PROMPT` más `{ regla, ayuda, html, padre, resumen, idioma, titulo }` del fragmento **y del lote entero en que se pidió** (sin ids), en JSON con las claves ordenadas.
+  - **Por qué el lote:** Gemini ve todo el lote en un prompt, así que otro fragmento del mismo pedido podría dictar la corrección de uno común. Con el lote en la clave, nadie puede envenenar la caché compartida para otra persona. La misma página produce los mismos lotes, así que volver a auditarla sale de la caché.
   - Antes de llamar se lee cada fragmento. Solo los que faltan van a Gemini, en una sola llamada, y si están todos no hay llamada.
   - Cada corrección válida se guarda por separado.
   - Cambiar el prompt exige subir `VERSION_PROMPT`.
