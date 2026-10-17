@@ -32,10 +32,15 @@ La fórmula se muestra en la interfaz con un "¿Cómo se calcula?" junto al punt
 
 ## Verificación de las correcciones
 
-1. **Por problema:** se reemplaza en el HTML original la primera aparición exacta de `original` por `corregido` y se vuelve a auditar.
-   - *Resuelto*: el par regla + selector ya no aparece **y** la regla afecta a menos elementos que antes (si la corrección cambió el selector pero el problema sigue, no cuenta) **y** no aparecieron problemas nuevos.
-   - *No resolvió el problema*, *Resolvió pero introdujo otros* o *No se pudo aplicar* (el fragmento no está en el HTML): nunca se presentan como solución.
-2. **Documento completo:** se audita el documento corregido y se compara con la auditoría original: resueltos, sin resolver, nuevos y puntaje antes → después.
+Las correcciones llegan por fragmentos (ver [ia.md](ia.md)) y el frontend las aplica como **reemplazos de texto** en su lugar exacto del HTML. Se verifican por lote:
+
+1. **Todas juntas.** Se aplican las correcciones del lote y se audita una vez.
+   - *Resuelto*: el par regla + selector ya no aparece, la regla bajó al menos en tantos elementos como correcciones suyas desaparecieron (si la corrección cambió el selector pero el problema sigue, no cuenta) y no aparecieron problemas nuevos.
+   - Una corrección que quita u oculta el elemento no se aplica: queda como *Quitó u ocultó el elemento*.
+2. **Una por una, si hace falta.** Si la auditoría combinada trae problemas nuevos, se audita cada corrección por separado para saber cuál los causó (*Resolvió pero introdujo otros*).
+3. **Documento corregido.** Es el HTML original con **solo las resueltas**. Se compara con la auditoría original: resueltos, sin resolver, nuevos y puntaje antes → después.
+
+*No resolvió el problema*, *Resolvió pero introdujo otros*, *No se pudo aplicar* y *La IA no devolvió una corrección válida* nunca se presentan como solución.
 
 ## Limitación: páginas que necesitan JavaScript
 
