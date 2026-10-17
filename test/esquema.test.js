@@ -71,3 +71,13 @@ test('el prompt incluye el HTML y cada problema con su selector', () => {
   assert.match(prompt, /image-alt/);
   assert.match(prompt, /#enviar/);
 });
+
+test('rechaza una corrección vacía o idéntica al original', () => {
+  for (const corregido of ['', '   ', '<img src="a.png">']) {
+    const v = valida();
+    v.problemas[0].corregido = corregido;
+    const r = validarCorreccion(v, pedidos);
+    assert.equal(r.ok, false, `«${corregido}» debería rechazarse`);
+    assert.ok(r.errores.some((e) => /cambiar el fragmento|corrección necesita/.test(e)), r.errores.join('\n'));
+  }
+});

@@ -103,3 +103,27 @@ test('llamarGeminiJson pide JSON y devuelve el texto', async () => {
   assert.equal(await llamarGeminiJson({ sistema: 'S', usuario: 'U', fetchImpl }), '{"a":1}');
   assert.equal(cuerpo.generationConfig.responseMimeType, 'application/json');
 });
+
+test('problemas mal formados o más de 30 elementos en total → 400 sin llamar a Gemini', async () => {
+  const nodos = (n) => Array.from({ length: n }, (_, i) => ({ selector: `p:nth-child(${i + 1})`, html: '<p>' }));
+  for (const [nombre, mala] of [
+    ['objeto vacío', { ...entrada, problemas: [{}] }],
+    ['sin nodos', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [] }] }],
+    ['nodo sin selector', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [{ html: '<img>' }] }] }],
+    ['fragmento enorme', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [{ selector: 'img', html: 'x'.repeat(5000) }] }] }],
+    ['31 elementos', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: nodos(12) }, { regla: 'color-contrast', ayuda: 'y', nodos: nodos(19) }] }],
+  ]) {
+    const f = falsos([valida]);
+    const err = await errorDe(corregir(mala, f));
+    assert.equal(err.estado, 400, nombre);
+    assert.equal(f.llamadas.length, 0, nombre);
+  }
+});
+
+test('30 elementos repartidos en dos reglas se aceptan', async () => {
+  const nodos = (n, t) => Array.from({ length: n }, (_, i) => ({ selector: `${t}:nth-child(${i + 1})`, html: `<${t}>` }));
+  const f = falsos([valida]);
+  const pedidos = [{ regla: 'image-alt', ayuda: 'x', nodos: [{ selector: 'img', html: '<img src="a.png">' }, ...nodos(11, 'img')] }, { regla: 'color-contrast', ayuda: 'y', nodos: nodos(18, 'p') }];
+  const r = await corregir({ ...entrada, problemas: pedidos }, f);
+  assert.equal(r.problemas.length, 1);
+});

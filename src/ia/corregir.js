@@ -1,10 +1,10 @@
 import { ErrorIA, llamarGeminiJson } from '../ia.js';
 import * as cacheBD from './cache.js';
 import { claveDe } from './cache.js';
-import { MAX_PROBLEMAS, validarCorreccion } from './esquema.js';
+import { esquemaEntrada, validarCorreccion } from './esquema.js';
 import { INSTRUCCIONES_CORRECCION, VERSION_PROMPT, construirPrompt } from './prompt.js';
 
-export const MAX_HTML_IA = 100_000;
+export { MAX_HTML_IA } from './esquema.js';
 
 function extraerJson(texto) {
   const inicio = texto.indexOf('{');
@@ -17,24 +17,19 @@ function extraerJson(texto) {
   }
 }
 
-function validarEntrada({ html, problemas }) {
-  if (typeof html !== 'string' || !html.trim()) throw new ErrorIA('No hay HTML para corregir.', 400);
-  if (html.length > MAX_HTML_IA) {
-    throw new ErrorIA('El HTML es demasiado largo para corregirlo con la IA (máximo 100 000 caracteres).', 400);
-  }
-  if (!Array.isArray(problemas) || problemas.length === 0) {
-    throw new ErrorIA('No hay problemas para corregir.', 400);
-  }
-  if (problemas.length > MAX_PROBLEMAS) {
-    throw new ErrorIA(`Se pueden corregir hasta ${MAX_PROBLEMAS} problemas a la vez.`, 400);
-  }
+const MENSAJES_PROPIOS = /^(No hay|El HTML|Se pueden)/;
+
+function validarEntrada(entrada) {
+  const r = esquemaEntrada.safeParse(entrada);
+  if (r.success) return r.data;
+  const propio = r.error.issues.find((i) => MENSAJES_PROPIOS.test(i.message));
+  throw new ErrorIA(propio?.message ?? 'Los problemas enviados no tienen el formato esperado.', 400);
 }
 
 // Explica y corrige los problemas con Gemini. La misma entrada sale de la caché (no se vuelve a
 // llamar); una respuesta inválida se reintenta una vez contándole a Gemini qué falló.
 export async function corregir(entrada, { llamar = llamarGeminiJson, cache = cacheBD } = {}) {
-  validarEntrada(entrada);
-  const { html, problemas } = entrada;
+  const { html, problemas } = validarEntrada(entrada);
   const clave = claveDe({ html, problemas }, VERSION_PROMPT);
 
   const guardada = await cache.leer(clave).catch(() => null);
