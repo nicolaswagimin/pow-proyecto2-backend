@@ -39,6 +39,7 @@ Una vez por lote van el `idioma` (`lang` de `<html>`) y el `titulo` de la págin
 - Modelo: `GEMINI_MODEL` o, si falta, **`gemini-3.5-flash-lite`**. `gemini-2.5-flash` respondió "high demand" en otro proyecto.
 - `generationConfig`: `responseMimeType: "application/json"`, `temperature: 0.2`.
 - Tiempo máximo: 60 s. Si Gemini responde `429`, el cliente recibe `429` "La IA está saturada en este momento…".
+- Si Gemini está **muy solicitado** (`503`, "high demand", suele durar segundos), se reintenta **una vez** tras 1.5 s. Si sigue así, el cliente recibe `503` "La IA está muy solicitada en este momento. Espera unos segundos y pulsa «Corregir más»."
 - La API key solo vive en el backend (`GEMINI_API_KEY`).
 
 ## Prompt (`INSTRUCCIONES_FRAGMENTOS`, `VERSION_PROMPT = fragmentos-v1`)
@@ -96,6 +97,6 @@ Los items válidos se aceptan aunque otros fallen.
 
 ## Pruebas
 
-`test/corregir.test.js`, `test/esquema.test.js` y `test/gemini.test.js` usan un Gemini y una caché simulados: nunca gastan cuota.
+`test/corregir.test.js`, `test/esquema.test.js` y `test/gemini.test.js` (incluido el reintento por `503`) usan un Gemini y una caché simulados: nunca gastan cuota.
 
 Incluyen una **página grande** generada de más de 300 000 caracteres: sus fragmentos se aceptan y lo que viaja a Gemini mide menos de 5000 caracteres.

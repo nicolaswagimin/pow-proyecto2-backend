@@ -160,7 +160,7 @@ Response `200`:
 | `400` | "No hay fragmentos para corregir." · "Se pueden corregir hasta 10 fragmentos a la vez." · "Cada fragmento puede tener hasta 4000 caracteres." · "Cada fragmento necesita su HTML." · "Cada fragmento necesita un id distinto." · "Los fragmentos superan 20 000 caracteres en total." · "Los fragmentos enviados no tienen el formato esperado." (validado con Zod) |
 | `429` | "La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo." (Gemini) · "Pediste muchas correcciones seguidas…" (límite propio) |
 | `502` | "La IA devolvió una corrección inválida dos veces…" (ningún fragmento válido) · "La IA tardó demasiado en responder…" · "No se pudo consultar a la IA: …" |
-| `503` | "La IA no está configurada en el servidor." |
+| `503` | "La IA no está configurada en el servidor." · "La IA está muy solicitada en este momento…" (Gemini ocupado tras un reintento) |
 
 La ruta anterior, `POST /api/ia/corregir` (documento completo, máximo 100 000 caracteres), se eliminó y responde `404`.
 
