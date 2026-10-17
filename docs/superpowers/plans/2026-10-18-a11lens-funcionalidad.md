@@ -185,3 +185,12 @@ Cada componente con sus estilos (solo tokens) y su prueba de render; un commit p
 - [ ] `demo.sh`; capturas móvil/escritorio, claro/oscuro.
 - [ ] Revisión final del branch (subagente) y corrección de lo importante.
 - [ ] Resumen por repo: commits, `git log --oneline`, docs, verificación, variables nuevas (ninguna) y comandos para probar. **Esperar aprobación para el push.**
+
+---
+
+## Ajustes aprobados por el usuario (2026-10-17)
+
+1. **Páginas por URL con estilos reales:** la CSP del iframe permite hojas de estilo, fuentes e imágenes externas por `https:` (e imágenes `data:`), y ningún script salvo axe y el corredor (nonce): `default-src 'none'; style-src 'unsafe-inline' https:; font-src https: data:; img-src https: data:; script-src 'nonce-X'`. El saneador quita cualquier `<base>` del usuario y `documentoAislado` agrega `<base href="URL original">` para que las rutas relativas carguen; los scripts propios usan URL absoluta. ADR del frontend `0009-csp-y-base-para-paginas-por-url.md`. (Task 12 y 13.)
+2. **Sandbox mínimo:** test de que el iframe tiene exactamente `sandbox="allow-scripts"` (sin `allow-same-origin`, `allow-forms`, `allow-popups` ni `allow-top-navigation`) y de que `<meta http-equiv="refresh">` se elimina. (Task 12 y 13.)
+3. **Aviso de SPA:** `pareceSpa(html)` (función pura con tests: body con poco texto y un contenedor raíz como `#root`, `#app`, `#__next`, `app-root`, o casi todo scripts) → aviso en la interfaz explicando que la página necesita JavaScript para mostrarse y que se audita lo que llega sin ejecutarlo. (Task 11 y 19.)
+4. **Fórmula del puntaje visible:** en `docs/analisis-accesibilidad.md` y en la interfaz con un "¿Cómo se calcula?" (`<details>`) junto al puntaje. (Task 8, 18.)
