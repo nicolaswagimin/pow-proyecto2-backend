@@ -8,7 +8,7 @@ Responde siempre en español, de forma clara, breve y amable.
 Si no sabes algo, dilo con honestidad en lugar de inventar.
 `.trim();
 
-const MODELO_POR_DEFECTO = 'gemini-2.5-flash';
+const MODELO_POR_DEFECTO = 'gemini-3.5-flash-lite';
 
 export function iaDisponible() {
   return Boolean(process.env.GEMINI_API_KEY);
