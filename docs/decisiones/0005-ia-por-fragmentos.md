@@ -22,7 +22,8 @@ Opción 3, con `POST /api/ia/fragmentos`.
 - **Ubicación exacta.** El frontend ubica cada elemento con problemas en el texto del HTML original. Usa la ruta del nodo en el DOM, que envía el corredor dentro del iframe, y la recorre en un árbol de parse5 con posiciones de origen (ver la ADR 0010 del frontend). Así obtiene el fragmento **literal**: el elemento completo si mide ≤ 1500 caracteres y no contiene otro elemento con problemas, o si no, su etiqueta de apertura.
 - **Contexto mínimo.** Cada fragmento va con la apertura del padre y el detalle de axe; el lote, con el idioma y el título.
 - **Lotes y prioridad.** Por lote: 8 fragmentos y 12 000 caracteres. Por petición: 10 y 20 000 como tope del servidor. Primero los de mayor gravedad. Los elementos idénticos van una vez.
-- **Caché por fragmento** en `ia_cache` (clave sin el id ni la página). El reintento pide solo lo que faltó, y lo que siga faltando vuelve en `sinRespuesta`, no como error del lote.
+- **Caché por fragmento** en `ia_cache`. La clave no lleva el id, pero sí el lote entero: Gemini ve todo el lote, y así un lote armado a propósito no puede envenenar la corrección de un fragmento común para otra persona. El reintento pide solo lo que faltó, y lo que siga faltando vuelve en `sinRespuesta`, no como error del lote.
+- **Sin código ejecutable.** Una corrección no puede agregar scripts, marcos, `on*`, `javascript:` ni meta refresh. Se comprueba en el servidor y en el navegador.
 - **Verificación en el navegador.** Las correcciones se aplican como **reemplazos de texto** en el HTML original y el resultado se vuelve a auditar con axe. El documento corregido solo incluye las verificadas.
 
 ## Consecuencias

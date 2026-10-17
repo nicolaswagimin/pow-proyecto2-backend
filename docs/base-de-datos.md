@@ -58,7 +58,7 @@ El historial: cada vez que la persona pulsa **Guardar en el historial** se crea 
 
 ## `ia_cache`
 
-Correcciones de Gemini ya validadas, **una fila por fragmento**. `clave` es el SHA-256 de la regla, el fragmento, su contexto (padre, detalle de axe, idioma y título) y la versión del prompt (ver [ia.md](ia.md#cuota-caché-lotes-y-límites)); `respuesta`, `{ explicacion, corregido }`. Las filas del prompt anterior (`correccion-v1`, documento completo) quedan sin uso. Se escribe con `ON CONFLICT DO NOTHING`.
+Correcciones de Gemini ya validadas, **una fila por fragmento**. `clave` es el SHA-256 de la regla, el fragmento, su contexto (padre, detalle de axe, idioma y título), el lote en que se pidió y la versión del prompt (ver [ia.md](ia.md#cuota-caché-lotes-y-límites)); `respuesta`, `{ explicacion, corregido }`. Las filas del prompt anterior (`correccion-v1`, documento completo) quedan sin uso. Se escribe con `ON CONFLICT DO NOTHING`.
 
 ### La tabla `items`
 

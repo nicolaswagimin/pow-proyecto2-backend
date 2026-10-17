@@ -14,4 +14,6 @@ Tabla `ia_cache` con clave SHA-256 del HTML + problemas (JSON con claves ordenad
 - La tabla crece sin límite; si hiciera falta, se puede borrar lo antiguo por `creado_en` sin efectos en la app.
 
 ## Actualización (0005)
-Desde la corrección por fragmentos, la caché guarda **una fila por fragmento**. La clave es el SHA-256 de la regla, el fragmento, su contexto (padre, detalle de axe, idioma y título) y `VERSION_PROMPT`. Una página nueva reutiliza las correcciones de fragmentos que ya se vieron en otra, y una corrección parcial ya no se pierde.
+Desde la corrección por fragmentos, la caché guarda **una fila por fragmento**. La clave es el SHA-256 de la regla, el fragmento, su contexto (padre, detalle de axe, idioma y título), el lote entero en que se pidió y `VERSION_PROMPT`. Volver a auditar una página reutiliza sus correcciones, y una corrección parcial ya no se pierde.
+
+El lote va en la clave porque Gemini ve todo el lote en un prompt: sin él, un lote armado a propósito podía envenenar la corrección compartida de un fragmento común.

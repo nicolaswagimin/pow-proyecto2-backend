@@ -153,7 +153,7 @@ Response `200`:
 }
 ```
 
-`sinRespuesta` lista los ids que la IA no devolvió bien ni al reintentar. El resto de la respuesta se puede usar igual.
+`sinRespuesta` lista los ids que la IA no devolvió bien ni al reintentar; entre ellos, los que agregaban código ejecutable. El resto de la respuesta se puede usar igual.
 
 | Código | Mensaje |
 |---|---|
