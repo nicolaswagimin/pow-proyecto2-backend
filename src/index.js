@@ -9,6 +9,7 @@ import authRouter from './routes/auth.js';
 import itemsRouter from './routes/items.js';
 import iaRouter from './routes/ia.js';
 import { rutasPaginas } from './routes/paginas.js';
+import { rutasAuditorias } from './routes/auditorias.js';
 
 const PORT = process.env.PORT || 3002;
 
@@ -53,6 +54,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/items', requireAuth, itemsRouter);
 app.use('/api/ia', requireAuth, limiteIA, iaRouter);
 app.use('/api/paginas', requireAuth, limiteDescargas, rutasPaginas());
+app.use('/api/auditorias', requireAuth, rutasAuditorias());
 
 // ---------- Errores ----------
 app.use('/api', (req, res) => {
