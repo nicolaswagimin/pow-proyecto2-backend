@@ -121,42 +121,48 @@ Response `200`: `{ "html": "<!DOCTYPE html>…", "urlFinal": "https://ejemplo.or
 
 ## Corregir con IA
 
-### `POST /api/ia/corregir`
+### `POST /api/ia/fragmentos`
 
-Protegida, 20 cada 15 min por usuario. Explica cada problema en español simple y propone la corrección por problema y del documento completo (ver [ia.md](ia.md)). La misma entrada sale de la caché sin volver a llamar a Gemini.
+Protegida, 20 peticiones cada 15 min por usuario. Recibe solo los **fragmentos** de los elementos con problemas, nunca el documento: sirve para páginas de cualquier tamaño. Explica cada problema en español simple y propone el fragmento corregido (ver [ia.md](ia.md)). Los fragmentos que ya están en la caché no vuelven a llamar a Gemini.
 
 Request:
 
 ```json
 {
-  "html": "<main><img src=\"a.png\"></main>",
-  "problemas": [
-    { "regla": "image-alt", "ayuda": "Las imágenes deben tener texto alternativo.",
-      "nodos": [{ "selector": "img", "html": "<img src=\"a.png\">" }] }
+  "pagina": { "idioma": "es", "titulo": "Tienda" },
+  "fragmentos": [
+    { "id": "f1", "regla": "image-alt", "ayuda": "Las imágenes deben tener texto alternativo.",
+      "html": "<img src=\"logo.png\">", "padre": "<a href=\"/\">",
+      "resumen": "Fix any of the following: Element does not have an alt attribute" }
   ]
 }
 ```
+
+`pagina`, `ayuda`, `padre` y `resumen` son opcionales.
 
 Response `200`:
 
 ```json
 {
-  "problemas": [
-    { "regla": "image-alt", "selector": "img",
+  "fragmentos": [
+    { "id": "f1",
       "explicacion": "La imagen no tiene texto alternativo: quien usa lector de pantalla no sabe qué muestra.",
-      "original": "<img src=\"a.png\">", "corregido": "<img src=\"a.png\" alt=\"Logo de la tienda\">" }
+      "corregido": "<img src=\"logo.png\" alt=\"Logo de la tienda\">", "desdeCache": false }
   ],
-  "documento": "<main><img src=\"a.png\" alt=\"Logo de la tienda\"></main>",
-  "desdeCache": false
+  "sinRespuesta": []
 }
 ```
 
+`sinRespuesta` lista los ids que la IA no devolvió bien ni al reintentar. El resto de la respuesta se puede usar igual.
+
 | Código | Mensaje |
 |---|---|
-| `400` | "No hay HTML para corregir." · "El HTML es demasiado largo para corregirlo con la IA (máximo 100 000 caracteres)." · "No hay problemas para corregir." · "Se pueden corregir hasta 30 problemas a la vez." · "Se pueden corregir hasta 30 elementos a la vez." · "Los problemas enviados no tienen el formato esperado." (validado con Zod: cada problema con `regla`, `ayuda` y al menos un nodo con `selector` y `html` de hasta 4000 caracteres) |
+| `400` | "No hay fragmentos para corregir." · "Se pueden corregir hasta 10 fragmentos a la vez." · "Cada fragmento puede tener hasta 4000 caracteres." · "Cada fragmento necesita su HTML." · "Cada fragmento necesita un id distinto." · "Los fragmentos superan 20 000 caracteres en total." · "Los fragmentos enviados no tienen el formato esperado." (validado con Zod) |
 | `429` | "La IA está saturada en este momento. Espera un minuto y vuelve a intentarlo." (Gemini) · "Pediste muchas correcciones seguidas…" (límite propio) |
-| `502` | "La IA devolvió una corrección inválida dos veces…" · "La IA tardó demasiado en responder…" · "No se pudo consultar a la IA: …" |
+| `502` | "La IA devolvió una corrección inválida dos veces…" (ningún fragmento válido) · "La IA tardó demasiado en responder…" · "No se pudo consultar a la IA: …" |
 | `503` | "La IA no está configurada en el servidor." |
+
+La ruta anterior, `POST /api/ia/corregir` (documento completo, máximo 100 000 caracteres), se eliminó y responde `404`.
 
 ## Auditorías (historial)
 
@@ -183,7 +189,7 @@ Cuerpo de `POST` (validado con Zod; el primer error vuelve como `400`):
 
 `origen` es `pegado`, `archivo` o `url`; `html` y `htmlCorregido` hasta 2 MB; `puntaje` de 0 a 100. Un id que no es un entero positivo responde `400`.
 
-Las rutas `/api/items` y la `/api/ia` de texto libre se eliminaron: responden `404`.
+Las rutas `/api/items`, la `/api/ia` de texto libre y `/api/ia/corregir` se eliminaron: responden `404`.
 
 ## Probar con curl
 
