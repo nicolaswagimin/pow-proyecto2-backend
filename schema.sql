@@ -14,16 +14,8 @@ CREATE TABLE IF NOT EXISTS usuarios (
   creado_en     TIMESTAMP DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS items (
-  id          SERIAL PRIMARY KEY,
-  titulo      VARCHAR(200) NOT NULL,
-  descripcion TEXT DEFAULT '',
-  creado_en   TIMESTAMP DEFAULT NOW()
-);
-
--- Cada item pertenece a un usuario; si se borra el usuario, se borran sus items.
-ALTER TABLE items ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE;
-CREATE INDEX IF NOT EXISTS items_usuario_id_idx ON items (usuario_id);
+-- La tabla items del CRUD de ejemplo ya no se usa. No se borra aquí para no perder datos de
+-- bases existentes; si quieres eliminarla: DROP TABLE IF EXISTS items;
 
 -- Auditorías guardadas por cada usuario (el historial). "pagina" agrupa las auditorías de una
 -- misma página para ver la evolución del puntaje: la URL normalizada, el nombre del archivo o el
