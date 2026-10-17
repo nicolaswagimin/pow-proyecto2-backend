@@ -1,17 +1,8 @@
 import { ErrorIA, llamarGeminiJson } from '../ia.js';
 import * as cacheBD from './cache.js';
 import { claveDe } from './cache.js';
-import { esquemaEntrada, esquemaEntradaFragmentos, validarCorreccion, validarRespuestaFragmentos } from './esquema.js';
-import {
-  INSTRUCCIONES_CORRECCION,
-  INSTRUCCIONES_FRAGMENTOS,
-  VERSION_FRAGMENTOS,
-  VERSION_PROMPT,
-  construirPrompt,
-  construirPromptFragmentos,
-} from './prompt.js';
-
-export { MAX_HTML_IA } from './esquema.js';
+import { esquemaEntradaFragmentos, validarRespuestaFragmentos } from './esquema.js';
+import { INSTRUCCIONES_FRAGMENTOS, VERSION_PROMPT, construirPromptFragmentos } from './prompt.js';
 
 function extraerJson(texto) {
   const inicio = texto.indexOf('{');
@@ -23,46 +14,6 @@ function extraerJson(texto) {
     return null;
   }
 }
-
-const MENSAJES_PROPIOS = /^(No hay|El HTML|Se pueden)/;
-
-function validarEntrada(entrada) {
-  const r = esquemaEntrada.safeParse(entrada);
-  if (r.success) return r.data;
-  const propio = r.error.issues.find((i) => MENSAJES_PROPIOS.test(i.message));
-  throw new ErrorIA(propio?.message ?? 'Los problemas enviados no tienen el formato esperado.', 400);
-}
-
-// Explica y corrige los problemas con Gemini. La misma entrada sale de la caché (no se vuelve a
-// llamar); una respuesta inválida se reintenta una vez contándole a Gemini qué falló.
-export async function corregir(entrada, { llamar = llamarGeminiJson, cache = cacheBD } = {}) {
-  const { html, problemas } = validarEntrada(entrada);
-  const clave = claveDe({ html, problemas }, VERSION_PROMPT);
-
-  const guardada = await cache.leer(clave).catch(() => null);
-  if (guardada) return { ...guardada, desdeCache: true };
-
-  const usuario = construirPrompt({ html, problemas });
-  let errores = [];
-  for (let intento = 0; intento < 2; intento++) {
-    const texto = await llamar({
-      sistema: INSTRUCCIONES_CORRECCION,
-      usuario: intento === 0
-        ? usuario
-        : `${usuario}\n\nTu respuesta anterior no era válida:\n${errores.map((e) => `- ${e}`).join('\n')}\nCorrígela y devuelve solo el JSON.`,
-    });
-    const valor = extraerJson(texto);
-    const validacion = valor ? validarCorreccion(valor, problemas) : { ok: false, errores: ['La respuesta no era JSON.'] };
-    if (validacion.ok) {
-      await cache.escribir(clave, validacion.correccion).catch(() => {});
-      return { ...validacion.correccion, desdeCache: false };
-    }
-    errores = validacion.errores;
-  }
-  throw new ErrorIA('La IA devolvió una corrección inválida dos veces. Inténtalo de nuevo en un momento.', 502);
-}
-
-// ---------- Corrección por fragmentos ----------
 
 const MENSAJES_FRAGMENTOS = /^(No hay|Se pueden|Cada fragmento|Los fragmentos superan)/;
 
@@ -77,7 +28,7 @@ function validarEntradaFragmentos(entrada) {
 // id: el mismo fragmento en otra página u otro lote sale de la caché.
 export function claveFragmento(f, pagina) {
   const { regla, ayuda = '', html, padre = '', resumen = '' } = f;
-  return claveDe({ regla, ayuda, html, padre, resumen, idioma: pagina.idioma, titulo: pagina.titulo }, VERSION_FRAGMENTOS);
+  return claveDe({ regla, ayuda, html, padre, resumen, idioma: pagina.idioma, titulo: pagina.titulo }, VERSION_PROMPT);
 }
 
 // Corrige fragmentos sueltos: los que están en la caché no se piden; los demás van a Gemini en

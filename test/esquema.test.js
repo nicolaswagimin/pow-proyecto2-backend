@@ -1,83 +1,90 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validarCorreccion } from '../src/ia/esquema.js';
-import { INSTRUCCIONES_CORRECCION, construirPrompt } from '../src/ia/prompt.js';
+import { esquemaEntradaFragmentos, validarRespuestaFragmentos } from '../src/ia/esquema.js';
 
-const pedidos = [
-  { regla: 'image-alt', ayuda: 'Images must have alternate text', nodos: [{ selector: 'img', html: '<img src="a.png">' }] },
-  { regla: 'button-name', ayuda: 'Buttons must have discernible text', nodos: [{ selector: '#enviar', html: '<button id="enviar"></button>' }] },
-];
+const fragmento = (id, extra = {}) => ({
+  id,
+  regla: 'image-alt',
+  ayuda: 'Las imágenes deben tener texto alternativo.',
+  html: `<img src="${id}.png">`,
+  padre: '<a href="/">',
+  resumen: 'Fix any of the following: Element does not have an alt attribute',
+  ...extra,
+});
+const entrada = (fragmentos) => ({ pagina: { idioma: 'es', titulo: 'Tienda' }, fragmentos });
+const errorDe = (valor) => esquemaEntradaFragmentos.safeParse(valor).error?.issues.map((i) => i.message) ?? [];
 
-const valida = () => ({
-  problemas: [
+test('acepta una entrada de fragmentos válida', () => {
+  const r = esquemaEntradaFragmentos.safeParse(entrada([fragmento('f1'), fragmento('f2')]));
+  assert.equal(r.success, true, JSON.stringify(r.error?.issues));
+});
+
+test('padre, resumen y el contexto de la página son opcionales', () => {
+  const r = esquemaEntradaFragmentos.safeParse({ fragmentos: [{ id: 'f1', regla: 'label', html: '<input>' }] });
+  assert.equal(r.success, true, JSON.stringify(r.error?.issues));
+  assert.deepEqual(r.data.pagina, { idioma: '', titulo: '' });
+});
+
+test('como mucho 10 fragmentos por petición', () => {
+  const muchos = Array.from({ length: 11 }, (_, i) => fragmento(`f${i}`));
+  assert.ok(errorDe(entrada(muchos)).includes('Se pueden corregir hasta 10 fragmentos a la vez.'));
+});
+
+test('sin fragmentos: mensaje propio', () => {
+  assert.ok(errorDe(entrada([])).includes('No hay fragmentos para corregir.'));
+});
+
+test('un fragmento de más de 4000 caracteres se rechaza', () => {
+  const largo = fragmento('f1', { html: `<p>${'x'.repeat(4000)}</p>` });
+  assert.ok(errorDe(entrada([largo])).includes('Cada fragmento puede tener hasta 4000 caracteres.'));
+});
+
+test('la suma de los fragmentos no puede pasar de 20 000 caracteres', () => {
+  const grandes = Array.from({ length: 6 }, (_, i) => fragmento(`f${i}`, { html: `<p>${'x'.repeat(3500)}</p>` }));
+  assert.ok(errorDe(entrada(grandes)).includes('Los fragmentos superan 20 000 caracteres en total.'));
+});
+
+test('los ids deben ser únicos', () => {
+  assert.ok(errorDe(entrada([fragmento('f1'), fragmento('f1')])).includes('Cada fragmento necesita un id distinto.'));
+});
+
+const pedidos = [fragmento('f1'), fragmento('f2'), fragmento('f3')];
+const item = (id, extra = {}) => ({ id, explicacion: 'Falta el texto alternativo.', corregido: `<img src="${id}.png" alt="Logo">`, ...extra });
+
+test('respuesta válida: todos los fragmentos quedan en validos', () => {
+  const r = validarRespuestaFragmentos({ fragmentos: [item('f1'), item('f2'), item('f3')] }, pedidos);
+  assert.deepEqual(r.validos.map((v) => v.id), ['f1', 'f2', 'f3']);
+  assert.deepEqual(r.errores, []);
+});
+
+test('un item inválido no invalida a los demás', () => {
+  const r = validarRespuestaFragmentos(
     {
-      regla: 'image-alt',
-      selector: 'img',
-      explicacion: 'La imagen no tiene texto alternativo: quien usa lector de pantalla no sabe qué muestra.',
-      original: '<img src="a.png">',
-      corregido: '<img src="a.png" alt="Logo de la tienda">',
+      fragmentos: [
+        item('f1'),
+        item('f2', { corregido: '<img src="f2.png">' }), // igual al original
+        item('f3', { explicacion: ' ' }),
+        item('zz'), // no pedido
+      ],
     },
-  ],
-  documento: '<html><body><img src="a.png" alt="Logo de la tienda"><button id="enviar">Enviar</button></body></html>',
+    pedidos,
+  );
+  assert.deepEqual(r.validos.map((v) => v.id), ['f1']);
+  assert.equal(r.errores.length, 3, r.errores.join('\n'));
+  assert.ok(r.errores.some((e) => /f2.*cambiar/.test(e)), r.errores.join('\n'));
+  assert.ok(r.errores.some((e) => /zz.*no se pidió/.test(e)), r.errores.join('\n'));
 });
 
-test('acepta una corrección válida', () => {
-  const r = validarCorreccion(valida(), pedidos);
-  assert.equal(r.ok, true);
-  assert.equal(r.correccion.problemas.length, 1);
+test('un id repetido en la respuesta cuenta una sola vez', () => {
+  const r = validarRespuestaFragmentos({ fragmentos: [item('f1'), item('f1', { corregido: '<img src="f1.png" alt="Otro">' })] }, pedidos);
+  assert.equal(r.validos.length, 1);
+  assert.equal(r.validos[0].corregido, '<img src="f1.png" alt="Logo">');
 });
 
-test('rechaza si falta el documento corregido', () => {
-  const v = valida();
-  delete v.documento;
-  const r = validarCorreccion(v, pedidos);
-  assert.equal(r.ok, false);
-  assert.ok(r.errores.some((e) => /documento/.test(e)), r.errores.join('\n'));
-});
-
-test('rechaza una corrección de un problema que no se pidió', () => {
-  const v = valida();
-  v.problemas[0].regla = 'color-contrast';
-  const r = validarCorreccion(v, pedidos);
-  assert.ok(r.errores.includes('La corrección de "color-contrast" en "img" no corresponde a ningún problema pedido.'));
-});
-
-test('rechaza una explicación vacía', () => {
-  const v = valida();
-  v.problemas[0].explicacion = '  ';
-  assert.equal(validarCorreccion(v, pedidos).ok, false);
-});
-
-test('rechaza más de 30 problemas', () => {
-  const v = valida();
-  v.problemas = Array.from({ length: 31 }, () => valida().problemas[0]);
-  assert.equal(validarCorreccion(v, pedidos).ok, false);
-});
-
-test('rechaza algo que no es un objeto', () => {
-  assert.deepEqual(validarCorreccion('hola', pedidos), { ok: false, errores: ['La respuesta no es un objeto JSON.'] });
-});
-
-test('las instrucciones piden español simple, original literal y cambios mínimos', () => {
-  assert.match(INSTRUCCIONES_CORRECCION, /español/);
-  assert.match(INSTRUCCIONES_CORRECCION, /literal/i);
-  assert.match(INSTRUCCIONES_CORRECCION, /mínim/i);
-  assert.match(INSTRUCCIONES_CORRECCION, /no inventes/i);
-});
-
-test('el prompt incluye el HTML y cada problema con su selector', () => {
-  const prompt = construirPrompt({ html: '<main>x</main>', problemas: pedidos });
-  assert.match(prompt, /<main>x<\/main>/);
-  assert.match(prompt, /image-alt/);
-  assert.match(prompt, /#enviar/);
-});
-
-test('rechaza una corrección vacía o idéntica al original', () => {
-  for (const corregido of ['', '   ', '<img src="a.png">']) {
-    const v = valida();
-    v.problemas[0].corregido = corregido;
-    const r = validarCorreccion(v, pedidos);
-    assert.equal(r.ok, false, `«${corregido}» debería rechazarse`);
-    assert.ok(r.errores.some((e) => /cambiar el fragmento|corrección necesita/.test(e)), r.errores.join('\n'));
+test('algo que no tiene la forma esperada no tiene válidos', () => {
+  for (const malo of ['hola', null, [], { fragmentos: 'x' }]) {
+    const r = validarRespuestaFragmentos(malo, pedidos);
+    assert.deepEqual(r.validos, []);
+    assert.ok(r.errores.length > 0);
   }
 });

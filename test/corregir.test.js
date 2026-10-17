@@ -1,20 +1,28 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ErrorIA, llamarGeminiJson } from '../src/ia.js';
-import { corregir } from '../src/ia/corregir.js';
+import { ErrorIA } from '../src/ia.js';
+import { claveFragmento, corregirFragmentos } from '../src/ia/corregir.js';
+import { INSTRUCCIONES_FRAGMENTOS, construirPromptFragmentos } from '../src/ia/prompt.js';
 
 // Gemini y la caché simulados: las pruebas nunca gastan cuota.
 
-const problemas = [{ regla: 'image-alt', ayuda: 'Images must have alternate text', nodos: [{ selector: 'img', html: '<img src="a.png">' }] }];
-const entrada = { html: '<main><img src="a.png"></main>', problemas };
-
-const valida = JSON.stringify({
-  problemas: [{ regla: 'image-alt', selector: 'img', explicacion: 'Falta el texto alternativo.', original: '<img src="a.png">', corregido: '<img src="a.png" alt="Logo">' }],
-  documento: '<main><img src="a.png" alt="Logo"></main>',
+const pagina = { idioma: 'es', titulo: 'Tienda' };
+const fragmento = (id, html = `<img src="${id}.png">`) => ({
+  id,
+  regla: 'image-alt',
+  ayuda: 'Las imágenes deben tener texto alternativo.',
+  html,
+  padre: '<a href="/">',
+  resumen: 'Element does not have an alt attribute',
 });
-const invalida = JSON.stringify({ problemas: [] });
+const item = (id, html = `<img src="${id}.png">`) => ({
+  id,
+  explicacion: 'La imagen no tiene texto alternativo.',
+  corregido: html.replace('>', ' alt="Producto">'),
+});
+const respuesta = (...items) => JSON.stringify({ fragmentos: items });
 
-function falsos(respuestas) {
+function falsos(respuestas, guardado = new Map()) {
   const llamadas = [];
   const llamar = async (pedido) => {
     llamadas.push(pedido);
@@ -22,9 +30,8 @@ function falsos(respuestas) {
     if (r instanceof Error) throw r;
     return r;
   };
-  const guardado = new Map();
   const cache = { leer: async (k) => guardado.get(k) ?? null, escribir: async (k, v) => guardado.set(k, v) };
-  return { llamar, llamadas, cache };
+  return { llamar, llamadas, cache, guardado };
 }
 
 async function errorDe(promesa) {
@@ -37,93 +44,114 @@ async function errorDe(promesa) {
   assert.fail('se esperaba un error');
 }
 
-test('devuelve la corrección si la primera respuesta es válida', async () => {
-  const f = falsos([valida]);
-  const r = await corregir(entrada, f);
+test('corrige los fragmentos con una sola llamada', async () => {
+  const f = falsos([respuesta(item('f1'), item('f2'))]);
+  const r = await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2')] }, f);
   assert.equal(f.llamadas.length, 1);
-  assert.equal(r.desdeCache, false);
-  assert.equal(r.problemas[0].corregido, '<img src="a.png" alt="Logo">');
+  assert.deepEqual(r.fragmentos.map((x) => [x.id, x.desdeCache]), [['f1', false], ['f2', false]]);
+  assert.deepEqual(r.sinRespuesta, []);
 });
 
-test('reintenta una vez con los errores', async () => {
-  const f = falsos([invalida, valida]);
-  await corregir(entrada, f);
+test('todos en la caché: no llama a Gemini', async () => {
+  const guardado = new Map();
+  await corregirFragmentos({ pagina, fragmentos: [fragmento('f1')] }, falsos([respuesta(item('f1'))], guardado));
+  const f = falsos([new Error('no debería llamar')], guardado);
+  // Otro id, el mismo fragmento: la clave no depende del id.
+  const r = await corregirFragmentos({ pagina, fragmentos: [fragmento('otro', '<img src="f1.png">')] }, f);
+  assert.equal(f.llamadas.length, 0);
+  assert.deepEqual(r.fragmentos, [{ ...item('otro', '<img src="f1.png">'), desdeCache: true }]);
+});
+
+test('aciertos parciales: Gemini recibe solo los que faltan', async () => {
+  const guardado = new Map();
+  await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2')] }, falsos([respuesta(item('f1'), item('f2'))], guardado));
+  const f = falsos([respuesta(item('f3'))], guardado);
+  const r = await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2'), fragmento('f3')] }, f);
+  assert.equal(f.llamadas.length, 1);
+  assert.doesNotMatch(f.llamadas[0].usuario, /f1\.png|f2\.png/);
+  assert.match(f.llamadas[0].usuario, /f3\.png/);
+  assert.deepEqual(r.fragmentos.map((x) => [x.id, x.desdeCache]), [['f1', true], ['f2', true], ['f3', false]]);
+});
+
+test('el reintento pide solo los que faltan, con los errores', async () => {
+  const f = falsos([respuesta(item('f1')), respuesta(item('f2'))]);
+  const r = await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2')] }, f);
   assert.equal(f.llamadas.length, 2);
-  assert.match(f.llamadas[1].usuario, /documento/);
+  assert.doesNotMatch(f.llamadas[1].usuario, /f1\.png/);
+  assert.match(f.llamadas[1].usuario, /f2\.png/);
+  assert.match(f.llamadas[1].usuario, /no era válida|faltó/i);
+  assert.deepEqual(r.fragmentos.map((x) => x.id), ['f1', 'f2']);
 });
 
-test('dos respuestas inválidas → 502 con mensaje claro', async () => {
-  const err = await errorDe(corregir(entrada, falsos([invalida, invalida])));
+test('lo que sigue faltando tras el reintento va en sinRespuesta', async () => {
+  const f = falsos([respuesta(item('f1')), 'no es json']);
+  const r = await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2')] }, f);
+  assert.deepEqual(r.fragmentos.map((x) => x.id), ['f1']);
+  assert.deepEqual(r.sinRespuesta, ['f2']);
+});
+
+test('ningún fragmento válido dos veces → 502', async () => {
+  const err = await errorDe(corregirFragmentos({ pagina, fragmentos: [fragmento('f1')] }, falsos(['{}', '{}'])));
   assert.equal(err.estado, 502);
   assert.match(err.message, /inválida dos veces/);
 });
 
-test('Gemini saturado (429) → 429 con mensaje claro', async () => {
-  const err = await errorDe(corregir(entrada, falsos([new ErrorIA('La IA está saturada', 429)])));
+test('las correcciones válidas se guardan en la caché, una por fragmento', async () => {
+  const f = falsos([respuesta(item('f1'), item('f2'))]);
+  await corregirFragmentos({ pagina, fragmentos: [fragmento('f1'), fragmento('f2')] }, f);
+  assert.equal(f.guardado.size, 2);
+  assert.deepEqual(f.guardado.get(claveFragmento(fragmento('f1'), pagina)), {
+    explicacion: item('f1').explicacion,
+    corregido: item('f1').corregido,
+  });
+});
+
+test('la clave cambia con el contexto, no con el id', () => {
+  const base = claveFragmento(fragmento('a'), pagina);
+  assert.equal(claveFragmento({ ...fragmento('a'), id: 'b' }, pagina), base);
+  assert.notEqual(claveFragmento({ ...fragmento('a'), padre: '<div>' }, pagina), base);
+  assert.notEqual(claveFragmento(fragmento('a'), { ...pagina, idioma: 'en' }), base);
+});
+
+test('una entrada inválida responde 400 sin llamar a Gemini', async () => {
+  const f = falsos([respuesta(item('f1'))]);
+  const err = await errorDe(corregirFragmentos({ pagina, fragmentos: [] }, f));
+  assert.equal(err.estado, 400);
+  assert.equal(err.message, 'No hay fragmentos para corregir.');
+  const otro = await errorDe(corregirFragmentos({ fragmentos: [{ id: 1 }] }, f));
+  assert.equal(otro.message, 'Los fragmentos enviados no tienen el formato esperado.');
+  assert.equal(f.llamadas.length, 0);
+});
+
+test('los errores de Gemini (429) se propagan', async () => {
+  const err = await errorDe(corregirFragmentos({ pagina, fragmentos: [fragmento('f1')] }, falsos([new ErrorIA('saturada', 429)])));
   assert.equal(err.estado, 429);
 });
 
-test('la misma entrada no vuelve a llamar a Gemini', async () => {
-  const f = falsos([valida]);
-  await corregir(entrada, f);
-  const segunda = await corregir(structuredClone(entrada), f);
-  assert.equal(f.llamadas.length, 1);
-  assert.equal(segunda.desdeCache, true);
+test('página grande: sus fragmentos entran aunque el documento pase de 100 000 caracteres', async () => {
+  const productos = Array.from(
+    { length: 2000 },
+    (_, i) => `<article class="producto"><a href="/p/${i}"><img src="/img/${i}.jpg"></a><p>Producto ${i} con una descripción larga para que la página pese.</p></article>`,
+  );
+  const html = `<!DOCTYPE html><html lang="es"><head><title>Tienda</title></head><body><main>${productos.join('\n')}</main></body></html>`;
+  assert.ok(html.length > 300_000);
+  const fragmentos = [...html.matchAll(/<img src="[^"]+">/g)].slice(0, 10).map((m, i) => fragmento(`f${i}`, m[0]));
+  const f = falsos([respuesta(...fragmentos.map((x) => item(x.id, x.html)))]);
+  const r = await corregirFragmentos({ pagina, fragmentos }, f);
+  assert.equal(r.fragmentos.length, 10);
+  assert.ok(f.llamadas[0].usuario.length < 5000, 'el documento entero nunca viaja a Gemini');
 });
 
-test('sin problemas, HTML vacío, demasiado HTML o demasiados problemas → 400 sin llamar', async () => {
-  for (const mala of [
-    { ...entrada, problemas: [] },
-    { ...entrada, html: '   ' },
-    { ...entrada, html: 'x'.repeat(100_001) },
-    { ...entrada, problemas: Array.from({ length: 31 }, () => problemas[0]) },
-  ]) {
-    const f = falsos([valida]);
-    const err = await errorDe(corregir(mala, f));
-    assert.equal(err.estado, 400);
-    assert.equal(f.llamadas.length, 0);
+test('el prompt lleva el contexto de la página y de cada fragmento', () => {
+  const prompt = construirPromptFragmentos({ pagina, fragmentos: [fragmento('f1')] });
+  for (const parte of ['Tienda', 'es', 'f1', 'image-alt', '<img src="f1.png">', '<a href="/">', 'alt attribute']) {
+    assert.ok(prompt.includes(parte), `falta ${parte}`);
   }
 });
 
-test('llamarGeminiJson convierte un 429 de Gemini en ErrorIA 429', async () => {
-  process.env.GEMINI_API_KEY = 'clave-de-prueba';
-  const fetchImpl = async () => new Response(JSON.stringify({ error: { message: 'quota' } }), { status: 429 });
-  const err = await errorDe(llamarGeminiJson({ sistema: 'S', usuario: 'U', fetchImpl }));
-  assert.equal(err.estado, 429);
-  assert.match(err.message, /saturada/);
-});
-
-test('llamarGeminiJson pide JSON y devuelve el texto', async () => {
-  process.env.GEMINI_API_KEY = 'clave-de-prueba';
-  let cuerpo;
-  const fetchImpl = async (url, opciones) => {
-    cuerpo = JSON.parse(opciones.body);
-    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: '{"a":1}' }] } }] }));
-  };
-  assert.equal(await llamarGeminiJson({ sistema: 'S', usuario: 'U', fetchImpl }), '{"a":1}');
-  assert.equal(cuerpo.generationConfig.responseMimeType, 'application/json');
-});
-
-test('problemas mal formados o más de 30 elementos en total → 400 sin llamar a Gemini', async () => {
-  const nodos = (n) => Array.from({ length: n }, (_, i) => ({ selector: `p:nth-child(${i + 1})`, html: '<p>' }));
-  for (const [nombre, mala] of [
-    ['objeto vacío', { ...entrada, problemas: [{}] }],
-    ['sin nodos', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [] }] }],
-    ['nodo sin selector', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [{ html: '<img>' }] }] }],
-    ['fragmento enorme', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: [{ selector: 'img', html: 'x'.repeat(5000) }] }] }],
-    ['31 elementos', { ...entrada, problemas: [{ regla: 'image-alt', ayuda: 'x', nodos: nodos(12) }, { regla: 'color-contrast', ayuda: 'y', nodos: nodos(19) }] }],
-  ]) {
-    const f = falsos([valida]);
-    const err = await errorDe(corregir(mala, f));
-    assert.equal(err.estado, 400, nombre);
-    assert.equal(f.llamadas.length, 0, nombre);
-  }
-});
-
-test('30 elementos repartidos en dos reglas se aceptan', async () => {
-  const nodos = (n, t) => Array.from({ length: n }, (_, i) => ({ selector: `${t}:nth-child(${i + 1})`, html: `<${t}>` }));
-  const f = falsos([valida]);
-  const pedidos = [{ regla: 'image-alt', ayuda: 'x', nodos: [{ selector: 'img', html: '<img src="a.png">' }, ...nodos(11, 'img')] }, { regla: 'color-contrast', ayuda: 'y', nodos: nodos(18, 'p') }];
-  const r = await corregir({ ...entrada, problemas: pedidos }, f);
-  assert.equal(r.problemas.length, 1);
+test('las instrucciones piden español simple, cambio mínimo y no inventar', () => {
+  assert.match(INSTRUCCIONES_FRAGMENTOS, /español/);
+  assert.match(INSTRUCCIONES_FRAGMENTOS, /mínim/i);
+  assert.match(INSTRUCCIONES_FRAGMENTOS, /no inventes/i);
+  assert.match(INSTRUCCIONES_FRAGMENTOS, /apertura/i);
 });
