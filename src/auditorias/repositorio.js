@@ -25,3 +25,13 @@ export async function guardar(usuarioId, a) {
   );
   return rows[0];
 }
+
+// Historial: sin el HTML ni los problemas (pueden ser grandes), del más reciente al más antiguo.
+export async function listar(usuarioId) {
+  const { rows } = await pool.query(
+    `SELECT id, pagina, origen, puntaje, resumen, puntaje_corregido, creado_en FROM auditorias
+     WHERE usuario_id = $1 ORDER BY creado_en DESC, id DESC`,
+    [usuarioId],
+  );
+  return rows;
+}
