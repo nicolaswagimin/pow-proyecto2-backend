@@ -8,7 +8,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 - `POST /api/ia/fragmentos`: corrige hasta 10 fragmentos por petición (4000 caracteres cada uno, 20 000 en total) con el contexto mínimo: padre, detalle de axe, idioma y título. El documento nunca viaja a la IA.
 - Caché por fragmento en `ia_cache`: se piden a Gemini solo los fragmentos que faltan, y el mismo fragmento con el mismo contexto no vuelve a llamar.
 - Respuesta parcial: cada item se valida por separado, el reintento pide solo lo que faltó y lo que siga faltando vuelve en `sinRespuesta`.
-- Pruebas con una página grande generada (más de 300 000 caracteres). En total, 97 pruebas.
+- Un reintento cuando Gemini responde `503` (muy solicitado), y si persiste, `503` con un mensaje claro.
+- Pruebas con una página grande generada (más de 300 000 caracteres). En total, 99 pruebas.
 
 ### Eliminado
 - `POST /api/ia/corregir` (documento completo) y su límite de 100 000 caracteres.
